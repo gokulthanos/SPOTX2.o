@@ -36,8 +36,7 @@ class _MyTicketsPageState extends State<MyTicketsPage> with SingleTickerProvider
   Future<void> _loadTickets() async {
     setState(() => _loading = true);
     try {
-      // Try API first
-      final apiTickets = await ApiService.fetchBuses(); // placeholder – will use fallback
+      await ApiService.fetchBuses(); // placeholder – will use fallback
     } catch (_) {}
 
     // Fallback: local storage

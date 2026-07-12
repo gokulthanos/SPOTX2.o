@@ -101,6 +101,15 @@ class StorageService {
     await setString('checkedTickets', jsonEncode(list));
   }
 
+  static Future<void> addCheckedTicket(String ticketNumber) async {
+    final list = getCheckedTickets();
+    list.add({
+      'ticketNumber': ticketNumber,
+      'checkedAt': DateTime.now().toIso8601String(),
+    });
+    await saveCheckedTickets(list);
+  }
+
   // Wallet
   static double getWalletBalance(String email) {
     final raw = getString('wallet_${email}_balance');

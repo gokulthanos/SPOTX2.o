@@ -14,6 +14,11 @@ class OfficerDashboard extends StatefulWidget {
 
 class _OfficerDashboardState extends State<OfficerDashboard> {
   final _ticketCtrl = TextEditingController();
+  final _fineCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _roleCtrl = TextEditingController(text: 'STAFF');
+  final _passwordCtrl = TextEditingController();
   bool _loading = false;
   Ticket? _ticketDetails;
   String _error = '';
@@ -22,6 +27,11 @@ class _OfficerDashboardState extends State<OfficerDashboard> {
   @override
   void dispose() {
     _ticketCtrl.dispose();
+    _fineCtrl.dispose();
+    _emailCtrl.dispose();
+    _nameCtrl.dispose();
+    _roleCtrl.dispose();
+    _passwordCtrl.dispose();
     super.dispose();
   }
 
@@ -106,7 +116,7 @@ class _OfficerDashboardState extends State<OfficerDashboard> {
                 valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF4F46E5)),
               ),
             ),
-            Text('\${(_dailyGoalProgress * 100).toInt()}%', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            Text('${(_dailyGoalProgress * 100).toInt()}%', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
           ],
         ),
       ],
@@ -172,7 +182,6 @@ class _OfficerDashboardState extends State<OfficerDashboard> {
   }
 
   Widget _finePanel() {
-    final _fineCtrl = TextEditingController();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -206,11 +215,6 @@ class _OfficerDashboardState extends State<OfficerDashboard> {
   }
 
   Widget _adminPanel() {
-    final _emailCtrl = TextEditingController();
-    final _nameCtrl = TextEditingController();
-    final _roleCtrl = TextEditingController(text: 'STAFF');
-    final _passwordCtrl = TextEditingController();
-
     Future<void> _registerStaff() async {
       final email = _emailCtrl.text.trim();
       final name = _nameCtrl.text.trim();

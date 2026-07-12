@@ -1,0 +1,14 @@
+{
+  "name": "spotx-server",
+  "version": "1.0.0",
+  "description": "SpotX Ride App Backend Server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "sql.js": "^1.11.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  }
+}

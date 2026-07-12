@@ -67,10 +67,7 @@ class LocationService {
       }
 
       final Position position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.low,
-          distanceFilter: 1000,
-        ),
+        desiredAccuracy: LocationAccuracy.low,
       );
       
       return getClosestCity(position.latitude, position.longitude);
