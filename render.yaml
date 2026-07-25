@@ -1,0 +1,21 @@
+# ─────────────────────────────────────────────────
+# SpotX 4.0 — Render Deployment
+# render.yaml (Blueprint)
+# ─────────────────────────────────────────────────
+services:
+  - type: web
+    name: spotx-api
+    runtime: node
+    plan: free
+    buildCommand: cd server && npm install
+    startCommand: cd server && node index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true

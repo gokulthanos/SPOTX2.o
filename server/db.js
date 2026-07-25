@@ -1,126 +1,111 @@
-const initSqlJs = require('sql.js');
+// server/db.js
+// ─────────────────────────────────────────────────
+// SpotX 4.0 — Database Layer
+// Engine: MySQL 8.x via mysql2/promise
+// ─────────────────────────────────────────────────
 const fs = require('fs');
 const path = require('path');
+const mysql = require('mysql2/promise');
+const { MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE } = require('./config/env');
+const logger = require('./utils/logger');
 
-const DB_PATH = path.join(__dirname, 'spotx.db');
-
-let db = null;
+let pool = null;
 
 async function initDB() {
-  const SQL = await initSqlJs();
+  pool = mysql.createPool({
+    host: MYSQL_HOST,
+    port: MYSQL_PORT,
+    user: MYSQL_USER,
+    password: MYSQL_PASSWORD,
+    database: MYSQL_DATABASE,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    charset: 'utf8mb4',
+  });
 
-  if (fs.existsSync(DB_PATH)) {
-    const buf = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(buf);
-  } else {
-    db = new SQL.Database();
-  }
+  // Test connection
+  const conn = await pool.getConnection();
+  logger.info(`[DB] Connected to MySQL at ${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}`);
+  conn.release();
 
-  db.run('PRAGMA journal_mode = WAL');
-  db.run('PRAGMA foreign_keys = ON');
-
-  db.run(`CREATE TABLE IF NOT EXISTS passengers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    full_name TEXT NOT NULL DEFAULT '',
-    contact TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL DEFAULT '',
-    token TEXT DEFAULT '',
-    created_at TEXT DEFAULT (datetime('now'))
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'STAFF',
-    token TEXT DEFAULT '',
-    created_at TEXT DEFAULT (datetime('now'))
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS otps (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    contact TEXT NOT NULL,
-    otp TEXT NOT NULL,
-    expires_at TEXT NOT NULL,
-    verified INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now'))
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS buses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    bus_number TEXT NOT NULL,
-    arrival_time TEXT DEFAULT '',
-    fare REAL DEFAULT 0,
-    route TEXT DEFAULT '',
-    from_stop TEXT DEFAULT '',
-    to_stop TEXT DEFAULT '',
-    bus_type TEXT DEFAULT 'Normal',
-    stops TEXT DEFAULT '[]',
-    current_stop_index INTEGER DEFAULT 0,
-    travel_status TEXT DEFAULT 'Not Started',
-    delay_minutes INTEGER DEFAULT 0,
-    city TEXT DEFAULT 'Chennai'
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS tickets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticket_number TEXT UNIQUE NOT NULL,
-    bus_id INTEGER,
-    bus_number TEXT DEFAULT '',
-    from_stop TEXT DEFAULT '',
-    to_stop TEXT DEFAULT '',
-    total_fare REAL DEFAULT 0,
-    status TEXT DEFAULT 'booked',
-    start_time TEXT DEFAULT '',
-    passengers TEXT DEFAULT '[]',
-    created_at TEXT DEFAULT (datetime('now'))
-  )`);
-
-  saveDB();
-  return db;
+  return pool;
 }
 
-function saveDB() {
-  if (!db) return;
-  const data = db.export();
-  const buffer = Buffer.from(data);
-  fs.writeFileSync(DB_PATH, buffer);
+/**
+ * Auto-create all tables from the MySQL schema file.
+ * Safe to run on every startup — uses IF NOT EXISTS.
+ */
+async function createTables() {
+  try {
+    const schemaPath = path.join(__dirname, '..', 'database', 'mysql-schema.sql');
+    if (!fs.existsSync(schemaPath)) {
+      logger.warn('[DB] mysql-schema.sql not found — skipping auto-create');
+      return;
+    }
+
+    const schema = fs.readFileSync(schemaPath, 'utf-8');
+
+    // Split by semicolons and execute each statement
+    // Filter out comments and empty lines
+    const statements = schema
+      .split(';')
+      .map(s => s.replace(/--[^\n]*/g, '').trim())
+      .filter(s => s.length > 0 && !s.startsWith('--'));
+
+    for (const stmt of statements) {
+      try {
+        await pool.execute(stmt);
+      } catch (err) {
+        // Ignore "table already exists" and "duplicate key" errors during init
+        if (err.code === 'ER_TABLE_EXISTS_ERROR' || err.code === 'ER_DUP_ENTRY') continue;
+        logger.warn(`[DB] Schema statement skipped: ${err.message}`);
+      }
+    }
+
+    logger.info('[DB] MySQL tables verified / created');
+  } catch (err) {
+    logger.error(`[DB] Error creating tables: ${err.message}`);
+  }
 }
 
-function getOne(sql, params = []) {
-  const stmt = db.prepare(sql);
-  if (params.length) stmt.bind(params);
-  if (stmt.step()) {
-    const cols = stmt.getColumnNames();
-    const vals = stmt.get();
-    stmt.free();
-    const row = {};
-    cols.forEach((c, i) => row[c] = vals[i]);
-    return row;
-  }
-  stmt.free();
-  return null;
+/**
+ * Execute a query and return the first matching row, or null.
+ */
+async function getOne(sql, params = []) {
+  const [rows] = await pool.execute(sql, params);
+  return rows.length > 0 ? rows[0] : null;
 }
 
-function getAll(sql, params = []) {
-  const stmt = db.prepare(sql);
-  if (params.length) stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) {
-    const cols = stmt.getColumnNames();
-    const vals = stmt.get();
-    const row = {};
-    cols.forEach((c, i) => row[c] = vals[i]);
-    rows.push(row);
-  }
-  stmt.free();
+/**
+ * Execute a query and return all matching rows.
+ */
+async function getAll(sql, params = []) {
+  const [rows] = await pool.execute(sql, params);
   return rows;
 }
 
-function run(sql, params = []) {
-  db.run(sql, params);
-  saveDB();
+/**
+ * Execute a write query (INSERT / UPDATE / DELETE).
+ */
+async function run(sql, params = []) {
+  const [result] = await pool.execute(sql, params);
+  return result;
 }
 
-module.exports = { initDB, getOne, getAll, run, saveDB };
+/**
+ * Return the last inserted row id.
+ */
+async function lastInsertId() {
+  const [result] = await pool.execute('SELECT LAST_INSERT_ID() as id');
+  return result[0] ? result[0].id : null;
+}
+
+/**
+ * No-op for MySQL (transactions handle this automatically).
+ */
+function saveDB() {
+  // No-op — MySQL handles persistence automatically
+}
+
+module.exports = { initDB, createTables, getOne, getAll, run, saveDB, lastInsertId, pool };

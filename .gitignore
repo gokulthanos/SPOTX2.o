@@ -48,3 +48,6 @@ app.*.map.json
 server/node_modules/
 server/spotx.db
 server/package-lock.json
+server/.env
+server/.env.local
+server/.env.production

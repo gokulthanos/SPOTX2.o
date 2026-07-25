@@ -1,0 +1,17 @@
+# ─────────────────────────────────────────────────
+# SpotX 4.0 — Railway Deployment
+# railway.toml
+# ─────────────────────────────────────────────────
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "cd server && npm install && node index.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[env]
+NODE_ENV = "production"
+PORT = "5000"

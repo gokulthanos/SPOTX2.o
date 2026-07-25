@@ -92,6 +92,7 @@ class _SignupPageState extends State<SignupPage> {
         name: data['fullName'] ?? _nameCtrl.text.trim(),
         contact: data['contact'] ?? _contactCtrl.text.trim(),
         token: data['token'] ?? '',
+        refreshToken: data['refreshToken'] ?? '',
       );
       setState(() => _step = _Step.success);
       Future.delayed(const Duration(seconds: 2), () {
@@ -133,9 +134,13 @@ class _SignupPageState extends State<SignupPage> {
                   alignment: Alignment.centerLeft,
                   child: IconButton(
                     onPressed: () {
-                      if (_step == _Step.details) Navigator.pop(context);
-                      else if (_step == _Step.otp) setState(() => _step = _Step.details);
-                      else setState(() => _step = _Step.otp);
+                      if (_step == _Step.details) {
+                        Navigator.pop(context);
+                      } else if (_step == _Step.otp) {
+                        setState(() => _step = _Step.details);
+                      } else {
+                        setState(() => _step = _Step.otp);
+                      }
                     },
                     icon: Container(
                       padding: const EdgeInsets.all(8),
@@ -154,7 +159,7 @@ class _SignupPageState extends State<SignupPage> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF4F46E5),
                   borderRadius: BorderRadius.circular(24),
-                  boxShadow: [BoxShadow(color: const Color(0xFF4F46E5).withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 8))],
+                  boxShadow: [BoxShadow(color: const Color(0xFF4F46E5).withValues(alpha: 0.3), blurRadius: 20, offset: const Offset(0, 8))],
                 ),
                 child: const Icon(Icons.person_add_rounded, color: Colors.white, size: 36),
               ),
@@ -182,7 +187,7 @@ class _SignupPageState extends State<SignupPage> {
                           decoration: BoxDecoration(
                             color: done ? const Color(0xFF22C55E) : current ? const Color(0xFF4F46E5) : const Color(0xFFF1F5F9),
                             borderRadius: BorderRadius.circular(12),
-                            boxShadow: current ? [BoxShadow(color: const Color(0xFF4F46E5).withOpacity(0.3), blurRadius: 12)] : [],
+                            boxShadow: current ? [BoxShadow(color: const Color(0xFF4F46E5).withValues(alpha: 0.3), blurRadius: 12)] : [],
                           ),
                           child: Center(
                             child: done
@@ -403,7 +408,7 @@ class _SignupPageState extends State<SignupPage> {
           padding: const EdgeInsets.symmetric(vertical: 18),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           elevation: 8,
-          shadowColor: const Color(0xFF4F46E5).withOpacity(0.3),
+          shadowColor: const Color(0xFF4F46E5).withValues(alpha: 0.3),
         ),
         child: _loading
           ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))

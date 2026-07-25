@@ -48,7 +48,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
               child: Container(
                 width: 200, height: 200,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4F46E5).withOpacity(0.06),
+                  color: const Color(0xFF4F46E5).withValues(alpha: 0.06),
                   shape: BoxShape.circle,
                 ),
               ),
@@ -58,7 +58,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
               child: Container(
                 width: 260, height: 260,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4F46E5).withOpacity(0.04),
+                  color: const Color(0xFF4F46E5).withValues(alpha: 0.04),
                   shape: BoxShape.circle,
                 ),
               ),
@@ -77,7 +77,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8)],
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -100,7 +100,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(32),
                       boxShadow: [
-                        BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 24, offset: const Offset(0, 8)),
+                        BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 24, offset: const Offset(0, 8)),
                       ],
                     ),
                     child: _submitted ? _buildSuccessView() : _buildFormView(),
@@ -172,7 +172,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
               padding: const EdgeInsets.symmetric(vertical: 18),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
               elevation: 8,
-              shadowColor: const Color(0xFF4F46E5).withOpacity(0.3),
+              shadowColor: const Color(0xFF4F46E5).withValues(alpha: 0.3),
             ),
             child: const Text('SEND RESET LINK',
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.5),

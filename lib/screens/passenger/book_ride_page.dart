@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/wallet_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/storage_service.dart';
 import '../../models/bus.dart';
@@ -15,9 +17,8 @@ class BookRidePage extends StatefulWidget {
 }
 
 class _PassengerEntry {
-  String name;
-  String gender; // Male, Female, Other
-  _PassengerEntry({this.name = '', this.gender = ''});
+  String name = '';
+  String gender = '';
 }
 
 class _BookRidePageState extends State<BookRidePage> {
@@ -25,6 +26,8 @@ class _BookRidePageState extends State<BookRidePage> {
   String _fromStop = '';
   String _toStop = '';
   bool _isPaying = false;
+  String _selectedPaymentMethod = 'wallet'; // 'wallet' or 'razorpay'
+  late Razorpay _razorpay;
 
   Bus get _bus => widget.bus;
 
@@ -56,11 +59,54 @@ class _BookRidePageState extends State<BookRidePage> {
 
   double get _totalFare => (_calculatedFare * _passengers.length).roundToDouble();
 
+  @override
+  void initState() {
+    super.initState();
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthProvider>();
+      context.read<WalletProvider>().loadWallet(auth.passengerContact);
+    });
+  }
+
+  @override
+  void dispose() {
+    _razorpay.clear();
+    super.dispose();
+  }
+
   void _addPassenger() => setState(() => _passengers.add(_PassengerEntry()));
 
   void _removePassenger(int idx) {
     if (_passengers.length > 1) setState(() => _passengers.removeAt(idx));
   }
+
+  // ─── Razorpay Event Handlers ────────────────────────────────────────
+
+  void _handlePaymentSuccess(PaymentSuccessResponse response) async {
+    debugPrint('[BOOKING] Razorpay gateway payment success: ${response.orderId}');
+    await _completeBookingWithRazorpay(
+      orderId: response.orderId ?? '',
+      paymentId: response.paymentId ?? '',
+      signature: response.signature ?? '',
+    );
+  }
+
+  void _handlePaymentError(PaymentFailureResponse response) {
+    _snack('Payment failed: ${response.message}', error: true);
+    setState(() => _isPaying = false);
+  }
+
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    _snack('Wallet not supported', error: true);
+    setState(() => _isPaying = false);
+  }
+
+  // ─── Booking Trigger ────────────────────────────────────────────────
 
   Future<void> _handleBooking() async {
     final incomplete = _passengers.any((p) => p.name.trim().isEmpty || p.gender.isEmpty);
@@ -75,22 +121,155 @@ class _BookRidePageState extends State<BookRidePage> {
 
     setState(() => _isPaying = true);
 
-    // Book via API
-    String ticketId;
+    if (_selectedPaymentMethod == 'wallet') {
+      await _bookWithWallet();
+    } else {
+      await _bookWithRazorpay();
+    }
+  }
+
+  // ─── Wallet Booking Flow ───────────────────────────────────────────
+
+  Future<void> _bookWithWallet() async {
+    final wallet = context.read<WalletProvider>();
+    if (wallet.balance < _totalFare) {
+      _snack('Insufficient wallet balance! Top up or pay with UPI/Card.', error: true);
+      setState(() => _isPaying = false);
+      return;
+    }
+
     try {
-      ticketId = await ApiService.bookTicket(
+      final auth = context.read<AuthProvider>();
+      
+      // Call booking endpoint (triggers wallet deduction on server)
+      final ticketId = await ApiService.bookTicket(
         busId: _bus.id,
         busNumber: _bus.busNumber,
         fromStop: _fromStop,
         toStop: _toStop,
         totalFare: _totalFare,
         passengers: _passengers.map((p) => {'name': p.name.trim(), 'gender': p.gender}).toList(),
+        paymentMethod: 'wallet',
       );
-    } catch (_) {
-      ticketId = (1000 + DateTime.now().millisecondsSinceEpoch % 9000).toString().substring(0, 4);
-    }
 
-    // Save locally
+      // Deduct locally
+      await wallet.deduct(_totalFare, 'Booked ticket for $_fromStop to $_toStop');
+
+      await _saveTicketToLocalCache(ticketId);
+      _completeBookingView(ticketId);
+    } catch (e) {
+      _snack(e.toString().replaceAll('Exception: ', ''), error: true);
+      setState(() => _isPaying = false);
+    }
+  }
+
+  // ─── Razorpay Booking Flow ─────────────────────────────────────────
+
+  Future<void> _bookWithRazorpay() async {
+    try {
+      final auth = context.read<AuthProvider>();
+
+      // 1. Create order on server
+      final orderData = await ApiService.initiatePayment(_totalFare, 'ticket');
+      final bool isMockOrder = orderData['mock'] == true;
+
+      if (isMockOrder) {
+        _showSimulatedPaymentDialog(orderData['orderId']);
+      } else {
+        // Launch Razorpay Checkout sheet
+        final options = {
+          'key': orderData['keyId'],
+          'amount': orderData['amount'], // paise
+          'name': 'SpotX Ride App',
+          'description': 'Ticket Payment',
+          'order_id': orderData['orderId'],
+          'prefill': {
+            'contact': auth.passengerContact,
+            'email': '${auth.passengerContact}@spotx.com',
+          },
+          'timeout': 300,
+        };
+        _razorpay.open(options);
+      }
+    } catch (e) {
+      _snack('Failed to initiate payment gateway: $e', error: true);
+      setState(() => _isPaying = false);
+    }
+  }
+
+  void _showSimulatedPaymentDialog(String orderId) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Simulated UPI / Gateway Payment', style: TextStyle(fontWeight: FontWeight.w900)),
+          content: Text(
+            'Razorpay simulated transaction of ₹${_totalFare.toStringAsFixed(0)} for order: $orderId.',
+            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                setState(() => _isPaying = false);
+              },
+              child: const Text('CANCEL', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              onPressed: () async {
+                Navigator.of(dialogContext).pop();
+                final mockPayId = 'pay_mock_${DateTime.now().millisecondsSinceEpoch}';
+                final mockSig = 'sig_mock_${DateTime.now().millisecondsSinceEpoch}';
+                await _completeBookingWithRazorpay(orderId: orderId, paymentId: mockPayId, signature: mockSig);
+              },
+              child: const Text('PAY SUCCESS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _completeBookingWithRazorpay({
+    required String orderId,
+    required String paymentId,
+    required String signature,
+  }) async {
+    try {
+      // 2. Verify payment on server
+      await ApiService.verifyPaymentSignature(
+        orderId: orderId,
+        paymentId: paymentId,
+        signature: signature,
+        purpose: 'ticket',
+      );
+
+      // 3. Create ticket record on server
+      final ticketId = await ApiService.bookTicket(
+        busId: _bus.id,
+        busNumber: _bus.busNumber,
+        fromStop: _fromStop,
+        toStop: _toStop,
+        totalFare: _totalFare,
+        passengers: _passengers.map((p) => {'name': p.name.trim(), 'gender': p.gender}).toList(),
+        paymentMethod: 'razorpay',
+        paymentId: paymentId,
+      );
+
+      await _saveTicketToLocalCache(ticketId);
+      _completeBookingView(ticketId);
+    } catch (e) {
+      _snack('Verification/Booking failed: $e', error: true);
+      setState(() => _isPaying = false);
+    }
+  }
+
+  // ─── Helpers ────────────────────────────────────────────────────────
+
+  Future<void> _saveTicketToLocalCache(String ticketId) async {
     final auth = context.read<AuthProvider>();
     final email = auth.passengerContact;
     await StorageService.addTicket(email, {
@@ -107,16 +286,15 @@ class _BookRidePageState extends State<BookRidePage> {
       'createdAt': DateTime.now().toIso8601String(),
       'passengers': _passengers.map((p) => {'name': p.name.trim(), 'gender': p.gender}).toList(),
     });
+  }
 
+  void _completeBookingView(String ticketId) {
     setState(() => _isPaying = false);
     _snack('Booking confirmed! Ticket #$ticketId');
-
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => TicketConfirmationPage(ticketNumber: ticketId)),
-      );
-    }
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => TicketConfirmationPage(ticketNumber: ticketId)),
+    );
   }
 
   void _snack(String msg, {bool error = false}) {
@@ -131,6 +309,8 @@ class _BookRidePageState extends State<BookRidePage> {
 
   @override
   Widget build(BuildContext context) {
+    final wallet = context.watch<WalletProvider>();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -159,13 +339,12 @@ class _BookRidePageState extends State<BookRidePage> {
                 children: [
                   _sectionLabel('Route Selection'),
                   const SizedBox(height: 14),
-                  // Route visual connector
                   Row(
                     children: [
                       Column(
                         children: [
                           Container(width: 12, height: 12, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF4F46E5), width: 3))),
-                          Container(width: 2, height: 30, color: const Color(0xFF4F46E5).withOpacity(0.3)),
+                          Container(width: 2, height: 30, color: const Color(0xFF4F46E5).withValues(alpha: 0.3)),
                           Container(width: 12, height: 12, decoration: const BoxDecoration(color: Color(0xFF4F46E5), shape: BoxShape.circle)),
                         ],
                       ),
@@ -196,6 +375,7 @@ class _BookRidePageState extends State<BookRidePage> {
               ),
             ),
             const SizedBox(height: 12),
+
             // Passengers card
             _card(
               child: Column(
@@ -226,6 +406,61 @@ class _BookRidePageState extends State<BookRidePage> {
               ),
             ),
             const SizedBox(height: 12),
+
+            // Payment Option Card
+            _card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sectionLabel('Payment Mode'),
+                  const SizedBox(height: 14),
+                  
+                  // Wallet Payment option
+                  RadioListTile<String>(
+                    activeColor: const Color(0xFF4F46E5),
+                    contentPadding: EdgeInsets.zero,
+                    value: 'wallet',
+                    groupValue: _selectedPaymentMethod,
+                    title: Row(
+                      children: [
+                        const Icon(Icons.account_balance_wallet_rounded, color: Color(0xFF4F46E5), size: 20),
+                        const SizedBox(width: 8),
+                        const Text('SpotX Digital Wallet', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                        const Spacer(),
+                        Text('(Balance: ₹${wallet.balance.toStringAsFixed(2)})', style: TextStyle(fontSize: 10, color: Colors.grey[500], fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    onChanged: (val) {
+                      setState(() {
+                        _selectedPaymentMethod = val!;
+                      });
+                    },
+                  ),
+                  
+                  // Gateway payment option
+                  RadioListTile<String>(
+                    activeColor: const Color(0xFF4F46E5),
+                    contentPadding: EdgeInsets.zero,
+                    value: 'razorpay',
+                    groupValue: _selectedPaymentMethod,
+                    title: const Row(
+                      children: [
+                        Icon(Icons.payment_rounded, color: Color(0xFF6366F1), size: 20),
+                        SizedBox(width: 8),
+                        Text('UPI / Cards / NetBanking (Razorpay)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                      ],
+                    ),
+                    onChanged: (val) {
+                      setState(() {
+                        _selectedPaymentMethod = val!;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
             // Fare summary
             _card(
               child: Column(
@@ -248,6 +483,7 @@ class _BookRidePageState extends State<BookRidePage> {
               ),
             ),
             const SizedBox(height: 20),
+
             // Pay Button
             SizedBox(
               width: double.infinity,
@@ -259,18 +495,18 @@ class _BookRidePageState extends State<BookRidePage> {
                   padding: const EdgeInsets.symmetric(vertical: 18),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                   elevation: 8,
-                  shadowColor: const Color(0xFF4F46E5).withOpacity(0.35),
+                  shadowColor: const Color(0xFF4F46E5).withValues(alpha: 0.35),
                 ),
                 child: _isPaying
-                  ? const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
-                        SizedBox(width: 10),
-                        Text('Processing...', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900)),
-                      ],
-                    )
-                  : Text('PAY ₹${_totalFare.toStringAsFixed(0)} & BOOK', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 1)),
+                    ? const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                          SizedBox(width: 10),
+                          Text('Processing...', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900)),
+                        ],
+                      )
+                    : Text('PAY ₹${_totalFare.toStringAsFixed(0)} & BOOK', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 1)),
               ),
             ),
             const SizedBox(height: 24),
@@ -294,7 +530,7 @@ class _BookRidePageState extends State<BookRidePage> {
         children: [
           Container(
             width: 32, height: 32,
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4)]),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4)]),
             child: Center(child: Text('${idx + 1}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12, color: Color(0xFF1E293B)))),
           ),
           const SizedBox(width: 10),
@@ -379,7 +615,7 @@ class _BookRidePageState extends State<BookRidePage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12)],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12)],
       ),
       child: child,
     );

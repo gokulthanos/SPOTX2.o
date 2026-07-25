@@ -1,14 +1,42 @@
 {
-  "name": "spotx-server",
-  "version": "1.0.0",
-  "description": "SpotX Ride App Backend Server",
+  "name": "spotx-backend",
+  "version": "4.0.0",
+  "description": "SpotX Transit Platform Backend — Production Ready",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "node index.js",
+    "demo": "node index.js --demo",
+    "seed": "node seed-demo.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --forceExit --detectOpenHandles",
+    "test:coverage": "node --experimental-vm-modules node_modules/.bin/jest --coverage --forceExit",
+    "lint": "eslint .",
+    "seed:demo": "node seed-demo.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
-    "sql.js": "^1.11.0",
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "express": "^4.18.2"
+    "crypto": "^1.0.1",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.5.1",
+    "express-validator": "^7.3.2",
+    "firebase-admin": "^12.7.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "mysql2": "^3.23.1",
+    "razorpay": "^2.9.8",
+    "socket.io": "^4.8.3",
+    "sql.js": "^1.9.0",
+    "uuid": "^9.0.1",
+    "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3"
   }
 }

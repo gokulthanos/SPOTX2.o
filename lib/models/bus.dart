@@ -52,6 +52,10 @@ class Bus {
   final String travelStatus; // Not Started, Running, Arrived, Delayed
   final int delayMinutes;
   final String city;
+  final int capacity;
+  final int currentOccupancy;
+  final double lat;
+  final double lon;
 
   Bus({
     required this.id,
@@ -67,6 +71,10 @@ class Bus {
     required this.travelStatus,
     required this.delayMinutes,
     required this.city,
+    this.capacity = 45,
+    this.currentOccupancy = 0,
+    this.lat = 0.0,
+    this.lon = 0.0,
   });
 
   factory Bus.fromJson(Map<String, dynamic> json) {
@@ -97,6 +105,10 @@ class Bus {
       travelStatus: json['travelStatus'] ?? 'Not Started',
       delayMinutes: json['delayMinutes'] ?? 0,
       city: json['city'] ?? 'Chennai',
+      capacity: json['capacity'] ?? 45,
+      currentOccupancy: json['currentOccupancy'] ?? 0,
+      lat: (json['lat'] is num) ? (json['lat'] as num).toDouble() : 0.0,
+      lon: (json['lon'] is num) ? (json['lon'] as num).toDouble() : 0.0,
     );
   }
 
@@ -115,6 +127,10 @@ class Bus {
       'travelStatus': travelStatus,
       'delayMinutes': delayMinutes,
       'city': city,
+      'capacity': capacity,
+      'currentOccupancy': currentOccupancy,
+      'lat': lat,
+      'lon': lon,
     };
   }
 }

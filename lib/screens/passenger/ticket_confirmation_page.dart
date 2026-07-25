@@ -34,6 +34,7 @@ class _TicketConfirmationPageState extends State<TicketConfirmationPage> {
     } catch (_) {}
 
     // Fallback to local storage
+    if (!mounted) return;
     final auth = context.read<AuthProvider>();
     final raw = StorageService.getSavedTickets(auth.passengerContact);
     final local = raw.firstWhere(
@@ -112,7 +113,7 @@ class _TicketConfirmationPageState extends State<TicketConfirmationPage> {
       child: SafeArea(
         child: Stack(
           children: [
-            Positioned(right: 10, top: 0, child: Opacity(opacity: 0.05, child: Icon(Icons.directions_bus_rounded, size: 160, color: Colors.white))),
+            const Positioned(right: 10, top: 0, child: Opacity(opacity: 0.05, child: Icon(Icons.directions_bus_rounded, size: 160, color: Colors.white))),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
               child: Column(
@@ -126,7 +127,7 @@ class _TicketConfirmationPageState extends State<TicketConfirmationPage> {
                       const Spacer(),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(16)),
+                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(16)),
                         child: Column(
                           children: [
                             const Text('BOOKING PASS', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white70, letterSpacing: 1)),
@@ -140,9 +141,9 @@ class _TicketConfirmationPageState extends State<TicketConfirmationPage> {
                   Container(
                     width: 80, height: 80,
                     decoration: BoxDecoration(
-                      color: expired ? Colors.white.withOpacity(0.1) : Colors.white,
+                      color: expired ? Colors.white.withValues(alpha: 0.1) : Colors.white,
                       borderRadius: BorderRadius.circular(28),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20)],
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 20)],
                     ),
                     child: Icon(
                       expired ? Icons.warning_amber_rounded : Icons.check_circle_rounded,
@@ -158,14 +159,14 @@ class _TicketConfirmationPageState extends State<TicketConfirmationPage> {
                   const SizedBox(height: 6),
                   Text(
                     expired ? 'Journey validity expired' : 'Scanning ready for boarding',
-                    style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.7)),
+                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.7)),
                   ),
                   const SizedBox(height: 16),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       _headerStat('Status', expired ? 'Invalid' : 'Active', expired ? const Color(0xFFFF8080) : const Color(0xFF86EFAC)),
-                      Container(width: 1, height: 30, color: Colors.white.withOpacity(0.15), margin: const EdgeInsets.symmetric(horizontal: 20)),
+                      Container(width: 1, height: 30, color: Colors.white.withValues(alpha: 0.15), margin: const EdgeInsets.symmetric(horizontal: 20)),
                       _headerStat('Expires', _timeLeft, Colors.white),
                     ],
                   ),
@@ -181,7 +182,7 @@ class _TicketConfirmationPageState extends State<TicketConfirmationPage> {
   Widget _headerStat(String label, String value, Color valueColor) {
     return Column(
       children: [
-        Text(label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white.withOpacity(0.5), letterSpacing: 1)),
+        Text(label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white.withValues(alpha: 0.5), letterSpacing: 1)),
         const SizedBox(height: 3),
         Text(value, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: valueColor)),
       ],
@@ -194,7 +195,7 @@ class _TicketConfirmationPageState extends State<TicketConfirmationPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12)],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12)],
       ),
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -243,7 +244,7 @@ class _TicketConfirmationPageState extends State<TicketConfirmationPage> {
 
   Widget _buildPassengerManifest() {
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12)]),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12)]),
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -260,7 +261,7 @@ class _TicketConfirmationPageState extends State<TicketConfirmationPage> {
                 children: [
                   Container(
                     width: 36, height: 36,
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4)]),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4)]),
                     child: Center(child: Text('0${i+1}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11))),
                   ),
                   const SizedBox(width: 12),
@@ -284,7 +285,7 @@ class _TicketConfirmationPageState extends State<TicketConfirmationPage> {
 
   Widget _buildQRCard() {
     return Container(
-      decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 12)]),
+      decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 12)]),
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
@@ -324,7 +325,7 @@ class _TicketConfirmationPageState extends State<TicketConfirmationPage> {
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(14)),
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(14)),
               child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -366,7 +367,7 @@ class _TicketConfirmationPageState extends State<TicketConfirmationPage> {
     final stops = _ticket!.bus!.stops;
     final currentIdx = _ticket!.bus!.currentStopIndex;
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12)]),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12)]),
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -387,7 +388,7 @@ class _TicketConfirmationPageState extends State<TicketConfirmationPage> {
                       decoration: BoxDecoration(
                         color: done ? const Color(0xFF22C55E) : current ? const Color(0xFF4F46E5) : const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(8),
-                        boxShadow: current ? [BoxShadow(color: const Color(0xFF4F46E5).withOpacity(0.3), blurRadius: 8)] : [],
+                        boxShadow: current ? [BoxShadow(color: const Color(0xFF4F46E5).withValues(alpha: 0.3), blurRadius: 8)] : [],
                       ),
                       child: Icon(
                         done ? Icons.check_rounded : Icons.circle,

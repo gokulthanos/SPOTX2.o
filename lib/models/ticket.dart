@@ -32,6 +32,10 @@ class Ticket {
     this.bus,
   });
 
+  String get ticketId => ticketNumber;
+  double get fare => totalFare;
+  int get passengerCount => passengers.isNotEmpty ? passengers.length : 1;
+
   factory Ticket.fromJson(Map<String, dynamic> json) {
     // Support database response formatting as well as local storage backups
     String ticketNo = json['ticketNumber'] ?? json['ticketId'] ?? '';

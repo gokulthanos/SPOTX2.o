@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../services/storage_service.dart';
+import '../services/notification_service.dart';
 
 enum AuthMode { none, passenger, officer }
 
@@ -12,11 +13,13 @@ class AuthProvider extends ChangeNotifier {
   String _officerId = '';
   String _officerRole = '';
   String _officerToken = '';
+  bool _initialized = false;
 
   AuthMode get mode => _mode;
   bool get isPassenger => _mode == AuthMode.passenger;
   bool get isOfficer => _mode == AuthMode.officer;
   bool get isLoggedIn => _mode != AuthMode.none;
+  bool get isInitialized => _initialized;
 
   String get passengerName => _passengerName;
   String get passengerContact => _passengerContact;
@@ -27,9 +30,9 @@ class AuthProvider extends ChangeNotifier {
   String get officerToken => _officerToken;
   bool get isAdmin => _officerRole == 'ADMIN';
 
-  /// Load saved session on app startup
-  void loadFromStorage() {
-    final passengerToken = StorageService.getString('passengerToken');
+  /// Load saved session on app startup (asynchronous secure load)
+  Future<void> loadFromStorage() async {
+    final passengerToken = await StorageService.getSecure('passengerToken');
     final govId = StorageService.getString('govOfficerId');
 
     if (passengerToken != null && passengerToken.isNotEmpty) {
@@ -42,8 +45,9 @@ class AuthProvider extends ChangeNotifier {
       _officerId = govId;
       _officerName = StorageService.getString('govOfficerName') ?? '';
       _officerRole = StorageService.getString('userRole') ?? 'STAFF';
-      _officerToken = StorageService.getString('authToken') ?? '';
+      _officerToken = await StorageService.getSecure('authToken') ?? '';
     }
+    _initialized = true;
     notifyListeners();
   }
 
@@ -51,17 +55,22 @@ class AuthProvider extends ChangeNotifier {
     required String name,
     required String contact,
     required String token,
+    String? refreshToken,
   }) async {
     await StorageService.savePassengerSession(
       token: token,
       name: name,
       contact: contact,
+      refreshToken: refreshToken,
     );
     _mode = AuthMode.passenger;
     _passengerName = name;
     _passengerContact = contact;
     _passengerToken = token;
     notifyListeners();
+
+    // Sync FCM token to backend after login
+    NotificationService.syncTokenAfterLogin();
   }
 
   Future<void> loginOfficer({
@@ -69,12 +78,14 @@ class AuthProvider extends ChangeNotifier {
     required String name,
     required String role,
     required String token,
+    String? refreshToken,
   }) async {
     await StorageService.saveOfficerSession(
       token: token,
       officerId: officerId,
       name: name,
       role: role,
+      refreshToken: refreshToken,
     );
     _mode = AuthMode.officer;
     _officerId = officerId;
@@ -82,9 +93,15 @@ class AuthProvider extends ChangeNotifier {
     _officerRole = role;
     _officerToken = token;
     notifyListeners();
+
+    // Sync FCM token to backend after officer login
+    NotificationService.syncTokenAfterLogin();
   }
 
   Future<void> logout() async {
+    // Delete FCM token from device on logout
+    await NotificationService.deleteToken();
+
     await StorageService.clearPassengerSession();
     await StorageService.clearOfficerSession();
     _mode = AuthMode.none;

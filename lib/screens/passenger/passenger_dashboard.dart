@@ -4,11 +4,15 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/location_service.dart';
 import '../../services/storage_service.dart';
-import '../../models/bus.dart';
+import '../../core/app_theme.dart';
 import '../auth/landing_page.dart';
 import 'bus_search_page.dart';
 import 'my_tickets_page.dart';
 import 'wallet_page.dart';
+import 'digital_pass_page.dart';
+import 'complaint_page.dart';
+import 'notifications_page.dart';
+import 'emergency_sos_page.dart';
 
 class PassengerDashboard extends StatefulWidget {
   const PassengerDashboard({super.key});
@@ -42,6 +46,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
     try {
       final buses = await ApiService.fetchBuses(city: city);
       final uniqueRoutes = buses.map((b) => b.route).toSet();
+      if (!mounted) return;
       final auth = context.read<AuthProvider>();
       final contact = auth.passengerContact;
       final tickets = StorageService.getSavedTickets(contact);
@@ -71,11 +76,11 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     return Scaffold(
-      backgroundColor: const Color(0xFFF0F4FF),
+      backgroundColor: AppTheme.surfaceWhite,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () => _fetchData(_detectedCity),
-          color: const Color(0xFF4F46E5),
+          color: AppTheme.primaryBlue,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             child: Column(
@@ -85,6 +90,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
                 _buildWelcomeSection(auth),
                 _buildStatsCard(),
                 _buildQuickActions(),
+                _buildMoreFeatures(),
                 _buildFeatureBanner(),
                 const SizedBox(height: 32),
               ],
@@ -106,24 +112,24 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8)],
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
             ),
-            child: const Icon(Icons.directions_bus_rounded, color: Color(0xFF4F46E5), size: 22),
+            child: const Icon(Icons.directions_bus_rounded, color: AppTheme.primaryBlue, size: 22),
           ),
           const SizedBox(width: 10),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('SpotX Transit',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF4F46E5), letterSpacing: 1),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: AppTheme.primaryBlue, letterSpacing: 1),
               ),
               Row(
                 children: [
-                  const Icon(Icons.my_location_rounded, size: 10, color: Color(0xFF94A3B8)),
+                  const Icon(Icons.my_location_rounded, size: 10, color: AppTheme.textMuted),
                   const SizedBox(width: 3),
                   Text(
                     _isLocating ? 'Locating...' : '$_detectedCity Region',
-                    style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8), fontWeight: FontWeight.w600),
+                    style: const TextStyle(fontSize: 10, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -131,15 +137,28 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
           ),
           const Spacer(),
           GestureDetector(
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsPage())),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
+              ),
+              child: const Icon(Icons.notifications_none_rounded, size: 18, color: AppTheme.textMuted),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
             onTap: _logout,
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(14),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8)],
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
               ),
-              child: const Icon(Icons.logout_rounded, size: 18, color: Color(0xFF94A3B8)),
+              child: const Icon(Icons.logout_rounded, size: 18, color: AppTheme.textMuted),
             ),
           ),
         ],
@@ -157,8 +176,8 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey[500], letterSpacing: 1),
           ),
           const SizedBox(height: 4),
-          Text('${auth.passengerName.isNotEmpty ? auth.passengerName : "Traveler"} 👋',
-            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFF1E293B)),
+          Text(auth.passengerName.isNotEmpty ? auth.passengerName : "Traveler",
+            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: AppTheme.textPrimary),
           ),
         ],
       ),
@@ -171,17 +190,17 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
       child: Container(
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [Color(0xFF4F46E5), Color(0xFF6366F1)],
+            colors: [AppTheme.primaryDark, AppTheme.primaryBlue, AppTheme.primaryLight],
             begin: Alignment.topLeft, end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(28),
-          boxShadow: [BoxShadow(color: const Color(0xFF4F46E5).withOpacity(0.35), blurRadius: 20, offset: const Offset(0, 8))],
+          boxShadow: [BoxShadow(color: AppTheme.primaryBlue.withValues(alpha: 0.35), blurRadius: 20, offset: const Offset(0, 8))],
         ),
         child: Stack(
           children: [
             Positioned(
               right: -10, top: -10,
-              child: Icon(Icons.directions_bus_rounded, size: 120, color: Colors.white.withOpacity(0.07)),
+              child: Icon(Icons.directions_bus_rounded, size: 120, color: Colors.white.withValues(alpha: 0.07)),
             ),
             Padding(
               padding: const EdgeInsets.all(24),
@@ -198,7 +217,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
+                          color: Colors.white.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: const Row(
@@ -214,11 +233,11 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
                   const SizedBox(height: 20),
                   Row(
                     children: [
-                      _statBlock('Buses', _loading ? '…' : '$_busCount'),
+                      _statBlock('Buses', _loading ? '..' : '$_busCount'),
                       const SizedBox(width: 12),
-                      _statBlock('Routes', _loading ? '…' : '$_routeCount'),
+                      _statBlock('Routes', _loading ? '..' : '$_routeCount'),
                       const SizedBox(width: 12),
-                      _statBlock('Booked', _loading ? '…' : '$_ticketCount'),
+                      _statBlock('Booked', _loading ? '..' : '$_ticketCount'),
                     ],
                   ),
                 ],
@@ -235,7 +254,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.12),
+          color: Colors.white.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(18),
         ),
         child: Column(
@@ -256,8 +275,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
         'title': 'Find & Book a Bus',
         'subtitle': 'Browse available routes and book instantly.',
         'icon': Icons.search_rounded,
-        'color': const Color(0xFF4F46E5),
-        'shadow': const Color(0xFF4F46E5),
+        'color': AppTheme.primaryBlue,
         'page': const BusSearchPage(),
       },
       {
@@ -265,7 +283,6 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
         'subtitle': 'View active passes and trip history.',
         'icon': Icons.confirmation_num_rounded,
         'color': const Color(0xFF0F172A),
-        'shadow': const Color(0xFF0F172A),
         'page': const MyTicketsPage(),
       },
     ];
@@ -275,7 +292,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Quick Actions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF1E293B))),
+          const Text('Quick Actions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppTheme.textPrimary)),
           const SizedBox(height: 4),
           Text("What would you like to do today?", style: TextStyle(fontSize: 12, color: Colors.grey[400])),
           const SizedBox(height: 14),
@@ -286,6 +303,60 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
             color: action['color'] as Color,
             page: action['page'] as Widget,
           )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMoreFeatures() {
+    final features = [
+      {'title': 'Digital Pass', 'icon': Icons.badge_rounded, 'color': AppTheme.primaryBlue, 'page': const DigitalPassPage()},
+      {'title': 'My Wallet', 'icon': Icons.account_balance_wallet_rounded, 'color': AppTheme.success, 'page': const WalletPage()},
+      {'title': 'Complaints', 'icon': Icons.feedback_outlined, 'color': AppTheme.warning, 'page': const ComplaintPage()},
+      {'title': 'Emergency SOS', 'icon': Icons.emergency_rounded, 'color': AppTheme.error, 'page': const EmergencySOSPage()},
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('More Services', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppTheme.textPrimary)),
+          const SizedBox(height: 12),
+          GridView.count(
+            crossAxisCount: 4,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 0.85,
+            children: features.map((f) => _featureTile(
+              title: f['title'] as String,
+              icon: f['icon'] as IconData,
+              color: f['color'] as Color,
+              page: f['page'] as Widget,
+            )).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _featureTile({required String title, required IconData icon, required Color color, required Widget page}) {
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
+      child: Column(
+        children: [
+          Container(
+            width: 56, height: 56,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(height: 6),
+          Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppTheme.textSecondary)),
         ],
       ),
     );
@@ -306,7 +377,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4))],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4))],
         ),
         child: Row(
           children: [
@@ -315,7 +386,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
               decoration: BoxDecoration(
                 color: color,
                 borderRadius: BorderRadius.circular(18),
-                boxShadow: [BoxShadow(color: color.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))],
+                boxShadow: [BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))],
               ),
               child: Icon(icon, color: Colors.white, size: 26),
             ),
@@ -324,7 +395,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF1E293B))),
+                  Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: AppTheme.textPrimary)),
                   const SizedBox(height: 2),
                   Text(subtitle, style: TextStyle(fontSize: 11, color: Colors.grey[400], fontWeight: FontWeight.w500)),
                 ],
@@ -333,7 +404,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
             Container(
               width: 34, height: 34,
               decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12)),
-              child: const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8), size: 20),
+              child: const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted, size: 20),
             ),
           ],
         ),
@@ -365,7 +436,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF4F46E5),
+                        color: AppTheme.primaryBlue,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Text('Open Wallet', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white)),
@@ -385,7 +456,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, -4))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, -4))],
       ),
       child: SafeArea(
         child: Padding(
@@ -416,11 +487,11 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
               color: active ? const Color(0xFFEEF2FF) : Colors.transparent,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: active ? const Color(0xFF4F46E5) : Colors.grey[400], size: 22),
+            child: Icon(icon, color: active ? AppTheme.primaryBlue : Colors.grey[400], size: 22),
           ),
           const SizedBox(height: 2),
           Text(label,
-            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: active ? const Color(0xFF4F46E5) : Colors.grey[400]),
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: active ? AppTheme.primaryBlue : Colors.grey[400]),
           ),
         ],
       ),

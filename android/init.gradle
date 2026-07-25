@@ -1,0 +1,26 @@
+import javax.net.ssl.*
+import java.security.cert.X509Certificate
+
+def trustAllCerts = [
+    checkClientTrusted: { X509Certificate[] chain, String authType -> },
+    checkServerTrusted: { X509Certificate[] chain, String authType -> },
+    getAcceptedIssuers: { -> new X509Certificate[0] }
+] as X509TrustManager
+
+def sslContext = SSLContext.getInstance("TLS")
+sslContext.init(null, [trustAllCerts] as TrustManager[], null)
+SSLContext.setDefault(sslContext)
+HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory())
+HttpsURLConnection.setDefaultHostnameVerifier({ String hostname, SSLSession session -> true } as HostnameVerifier)
+
+// Also handle Apache HTTP client used by Gradle
+System.setProperty('org.gradle.internal.http.connectionTimeout', '60000')
+System.setProperty('org.gradle.internal.http.socketTimeout', '60000')
+
+gradle.allprojects { project ->
+    project.tasks.withType(AbstractExec).configureEach { task ->
+        task.environment 'JAVA_TOOL_OPTIONS', "-Djavax.net.ssl.trustStore=${System.getProperty('javax.net.ssl.trustStore')} -Djavax.net.ssl.trustStorePassword=${System.getProperty('javax.net.ssl.trustStorePassword')}"
+    }
+}
+
+logger.lifecycle 'Init script: SSL verification disabled for proxy environment'

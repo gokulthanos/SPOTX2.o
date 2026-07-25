@@ -6,6 +6,10 @@ import 'signup_page.dart';
 import 'forgot_password_page.dart';
 import '../passenger/passenger_dashboard.dart';
 import '../officer/officer_dashboard.dart';
+import '../admin/admin_panel.dart';
+import '../admin/government_dashboard_page.dart';
+import '../kiosk/kiosk_mode_page.dart';
+import '../driver/driver_dashboard.dart';
 
 class LandingPage extends StatefulWidget {
   const LandingPage({super.key});
@@ -33,7 +37,7 @@ class _LandingPageState extends State<LandingPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       setState(() => _error = '');
     });
@@ -65,6 +69,7 @@ class _LandingPageState extends State<LandingPage>
         name: data['fullName'] ?? '',
         contact: data['contact'] ?? contact,
         token: data['token'] ?? '',
+        refreshToken: data['refreshToken'] ?? '',
       );
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -98,10 +103,13 @@ class _LandingPageState extends State<LandingPage>
         name: data['name'] ?? '',
         role: data['role'] ?? 'STAFF',
         token: data['token'] ?? '',
+        refreshToken: data['refreshToken'] ?? '',
       );
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const OfficerDashboard()),
+        MaterialPageRoute(builder: (_) => data['role'] == 'ADMIN'
+            ? const AdminPanel()
+            : const OfficerDashboard()),
       );
     } catch (e) {
       setState(() => _error = e.toString().replaceAll('Exception: ', ''));
@@ -112,6 +120,24 @@ class _LandingPageState extends State<LandingPage>
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    if (auth.isInitialized && auth.isLoggedIn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (auth.isPassenger) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const PassengerDashboard()),
+          );
+        } else if (auth.isOfficer) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const OfficerDashboard()),
+          );
+        }
+      });
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -130,7 +156,7 @@ class _LandingPageState extends State<LandingPage>
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF4F46E5).withOpacity(0.3),
+                        color: const Color(0xFF4F46E5).withValues(alpha: 0.3),
                         blurRadius: 20,
                         offset: const Offset(0, 8),
                       )
@@ -154,7 +180,7 @@ class _LandingPageState extends State<LandingPage>
 
                 // Heading
                 Text(
-                  _tabController.index == 0 ? 'Hello Traveler 👋' : 'Officer Login',
+                  _tabController.index == 0 ? 'Hello Traveler 👋' : _tabController.index == 1 ? 'Officer Login' : 'Driver Login',
                   style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: Color(0xFF1E293B)),
                 ),
                 const SizedBox(height: 8),
@@ -176,7 +202,7 @@ class _LandingPageState extends State<LandingPage>
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
-                        BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8)
+                        BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)
                       ],
                     ),
                     labelColor: const Color(0xFF4F46E5),
@@ -185,6 +211,7 @@ class _LandingPageState extends State<LandingPage>
                     tabs: const [
                       Tab(text: 'PASSENGER'),
                       Tab(text: 'GOVERNMENT'),
+                      Tab(text: 'DRIVER'),
                     ],
                   ),
                 ),
@@ -221,8 +248,56 @@ class _LandingPageState extends State<LandingPage>
                     children: [
                       _buildPassengerForm(),
                       _buildOfficerForm(),
+                      _buildDriverForm(),
                     ],
                   ),
+                ),
+                const SizedBox(height: 20),
+                // Quick Access Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: _quickAccessButton(
+                        label: 'KIOSK MODE',
+                        icon: Icons.touch_app_rounded,
+                        color: const Color(0xFF16A34A),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const KioskModePage())),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _quickAccessButton(
+                        label: 'GOV DASHBOARD',
+                        icon: Icons.analytics_rounded,
+                        color: const Color(0xFF2563EB),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GovernmentDashboardPage())),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _quickAccessButton(
+                        label: 'ADMIN PANEL',
+                        icon: Icons.admin_panel_settings_rounded,
+                        color: const Color(0xFF7C3AED),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminPanel())),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _quickAccessButton(
+                        label: 'SOS EMERGENCY',
+                        icon: Icons.emergency_rounded,
+                        color: const Color(0xFFDC2626),
+                        onTap: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const PassengerDashboard()));
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -310,6 +385,68 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
+  Widget _buildDriverForm() {
+    return Column(
+      children: [
+        _inputLabel('Employee ID'),
+        const SizedBox(height: 6),
+        _textField(
+          controller: _officerIdCtrl,
+          hint: 'DRIVER@SPOTX.IN',
+          icon: Icons.directions_bus_rounded,
+          upperCase: true,
+        ),
+        const SizedBox(height: 16),
+        _inputLabel('Password'),
+        const SizedBox(height: 6),
+        _textField(
+          controller: _officerPassCtrl,
+          hint: '••••••••',
+          icon: Icons.lock_outline_rounded,
+          isPassword: true,
+          visible: _officerPassVisible,
+          onToggleVisibility: () => setState(() => _officerPassVisible = !_officerPassVisible),
+        ),
+        const SizedBox(height: 24),
+        _primaryButton(
+          label: 'Start Driving',
+          loading: _officerLoading,
+          onPressed: _handleDriverLogin,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _handleDriverLogin() async {
+    setState(() { _error = ''; _officerLoading = true; });
+    final email = _officerIdCtrl.text.trim();
+    final password = _officerPassCtrl.text;
+
+    if (email.isEmpty || password.isEmpty) {
+      setState(() { _error = 'Please enter employee ID and password'; _officerLoading = false; });
+      return;
+    }
+    try {
+      final data = await ApiService.officerLogin(email, password);
+      if (!mounted) return;
+      await context.read<AuthProvider>().loginOfficer(
+        officerId: email,
+        name: data['name'] ?? '',
+        role: data['role'] ?? 'STAFF',
+        token: data['token'] ?? '',
+        refreshToken: data['refreshToken'] ?? '',
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const DriverDashboard()),
+      );
+    } catch (e) {
+      setState(() => _error = e.toString().replaceAll('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _officerLoading = false);
+    }
+  }
+
   Widget _inputLabel(String text) {
     return Align(
       alignment: Alignment.centerLeft,
@@ -377,12 +514,34 @@ class _LandingPageState extends State<LandingPage>
           padding: const EdgeInsets.symmetric(vertical: 18),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           elevation: 8,
-          shadowColor: const Color(0xFF4F46E5).withOpacity(0.3),
+          shadowColor: const Color(0xFF4F46E5).withValues(alpha: 0.3),
         ),
         child: loading
           ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
           : Text(label.toUpperCase(),
               style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+      ),
+    );
+  }
+
+  Widget _quickAccessButton({required String label, required IconData icon, required Color color, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(width: 8),
+            Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: color, letterSpacing: 1)),
+          ],
+        ),
       ),
     );
   }

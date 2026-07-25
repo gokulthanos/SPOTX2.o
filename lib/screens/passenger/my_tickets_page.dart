@@ -40,6 +40,7 @@ class _MyTicketsPageState extends State<MyTicketsPage> with SingleTickerProvider
     } catch (_) {}
 
     // Fallback: local storage
+    if (!mounted) return;
     final auth = context.read<AuthProvider>();
     final contact = auth.passengerContact;
     final raw = StorageService.getSavedTickets(contact);
@@ -129,7 +130,7 @@ class _MyTicketsPageState extends State<MyTicketsPage> with SingleTickerProvider
           children: [
             Container(
               width: 80, height: 80,
-              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), shape: BoxShape.circle),
+              decoration: const BoxDecoration(color: Color(0xFFF1F5F9), shape: BoxShape.circle),
               child: const Icon(Icons.confirmation_num_rounded, size: 40, color: Color(0xFFCBD5E1)),
             ),
             const SizedBox(height: 16),
@@ -194,8 +195,8 @@ class _TicketCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(28),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4))],
-        border: isActive ? Border.all(color: const Color(0xFF4F46E5).withOpacity(0.15)) : null,
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4))],
+        border: isActive ? Border.all(color: const Color(0xFF4F46E5).withValues(alpha: 0.15)) : null,
       ),
       child: Column(
         children: [
@@ -265,7 +266,7 @@ class _TicketCard extends StatelessWidget {
                       Column(
                         children: [
                           Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF4F46E5), width: 2))),
-                          Container(width: 2, height: 24, color: const Color(0xFF4F46E5).withOpacity(0.3)),
+                          Container(width: 2, height: 24, color: const Color(0xFF4F46E5).withValues(alpha: 0.3)),
                           Container(width: 10, height: 10, decoration: const BoxDecoration(color: Color(0xFF4F46E5), shape: BoxShape.circle)),
                         ],
                       ),
@@ -297,7 +298,7 @@ class _TicketCard extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(children: [const Icon(Icons.access_time_rounded, size: 10, color: Color(0xFF94A3B8)), const SizedBox(width: 3), const Text('SLOT', style: TextStyle(fontSize: 8, color: Color(0xFF94A3B8), fontWeight: FontWeight.w900, letterSpacing: 0.8))]),
+                            const Row(children: [Icon(Icons.access_time_rounded, size: 10, color: Color(0xFF94A3B8)), SizedBox(width: 3), Text('SLOT', style: TextStyle(fontSize: 8, color: Color(0xFF94A3B8), fontWeight: FontWeight.w900, letterSpacing: 0.8))]),
                             const SizedBox(height: 4),
                             Text(ticket.startTime.isNotEmpty ? ticket.startTime : '—', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF1E293B))),
                           ],

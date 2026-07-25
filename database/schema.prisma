@@ -1,0 +1,285 @@
+// ─────────────────────────────────────────────────
+// SpotX 4.0 — Prisma Schema (PostgreSQL)
+// npx prisma migrate dev --name init
+// npx prisma generate
+// ─────────────────────────────────────────────────
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model City {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  state     String   @default("Tamil Nadu")
+  lat       Float    @default(0)
+  lon       Float    @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  stops     Stop[]
+  @@map("cities")
+}
+
+model Stop {
+  id        Int      @id @default(autoincrement())
+  name      String
+  cityId    Int?     @map("city_id")
+  city      City?    @relation(fields: [cityId], references: [id])
+  lat       Float    @default(0)
+  lon       Float    @default(0)
+  stopType  String   @default("stop") @map("stop_type")
+  createdAt DateTime @default(now()) @map("created_at")
+  fromRoutes Route[] @relation("FromStop")
+  toRoutes   Route[] @relation("ToStop")
+  schedules  Schedule[]
+  @@map("stops")
+}
+
+model Route {
+  id         Int      @id @default(autoincrement())
+  routeNumber String  @map("route_number")
+  name       String
+  fromStopId Int?     @map("from_stop_id")
+  fromStop   Stop?    @relation("FromStop", fields: [fromStopId], references: [id])
+  toStopId   Int?     @map("to_stop_id")
+  toStop     Stop?    @relation("ToStop", fields: [toStopId], references: [id])
+  distanceKm Float    @default(0) @map("distance_km")
+  baseFare   Float    @default(0) @map("base_fare")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  buses      Bus[]
+  schedules  Schedule[]
+  @@map("routes")
+}
+
+model Bus {
+  id               Int      @id @default(autoincrement())
+  busNumber        String   @unique @map("bus_number")
+  routeId          Int?     @map("route_id")
+  route            Route?   @relation(fields: [routeId], references: [id])
+  busType          String   @default("Normal") @map("bus_type")
+  capacity         Int      @default(45)
+  currentOccupancy Int      @default(0) @map("current_occupancy")
+  travelStatus     String   @default("Not Started") @map("travel_status")
+  delayMinutes     Int      @default(0) @map("delay_minutes")
+  driverName       String   @default("") @map("driver_name")
+  lat              Float    @default(0)
+  lon              Float    @default(0)
+  city             String   @default("Chennai")
+  stops            Json     @default("[]")
+  fromStop         String   @default("") @map("from_stop")
+  toStop           String   @default("") @map("to_stop")
+  arrivalTime      String   @default("") @map("arrival_time")
+  fare             Float    @default(0)
+  updatedAt        DateTime @default(now()) @map("updated_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  tickets          Ticket[]
+  locations        BusLocation[]
+  schedules        Schedule[]
+  fines            Fine[]
+  @@index([routeId])
+  @@index([city])
+  @@index([travelStatus])
+  @@map("buses")
+}
+
+model Schedule {
+  id                  Int      @id @default(autoincrement())
+  busId               Int      @map("bus_id")
+  bus                 Bus      @relation(fields: [busId], references: [id], onDelete: Cascade)
+  stopId              Int      @map("stop_id")
+  stop                Stop     @relation(fields: [stopId], references: [id], onDelete: Cascade)
+  stopSequence        Int      @map("stop_sequence")
+  scheduledArrival    String   @map("scheduled_arrival")
+  scheduledDeparture  String   @map("scheduled_departure")
+  distanceFromOrigin  Float    @default(0) @map("distance_from_origin")
+  @@map("schedules")
+}
+
+model Passenger {
+  id           Int      @id @default(autoincrement())
+  fullName     String   @default("") @map("full_name")
+  contact      String   @unique
+  email        String   @default("")
+  passwordHash String   @map("password_hash")
+  refreshToken String?  @map("refresh_token")
+  walletBalance Float   @default(0) @map("wallet_balance")
+  fcmToken     String?  @map("fcm_token")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  tickets      Ticket[]
+  payments     Payment[]
+  walletTxns   WalletTransaction[]
+  notifications Notification[]
+  complaints   Complaint[]
+  @@map("passengers")
+}
+
+model User {
+  id              Int      @id @default(autoincrement())
+  name            String
+  email           String   @unique
+  passwordHash    String   @map("password_hash")
+  role            String   @default("STAFF")
+  refreshToken    String?  @map("refresh_token")
+  assignedRouteId Int?     @map("assigned_route_id")
+  fcmToken        String?  @map("fcm_token")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  verifiedTickets Ticket[]  @relation("VerifiedBy")
+  issuedFines     Fine[]
+  @@map("users")
+}
+
+model Otp {
+  id        Int      @id @default(autoincrement())
+  contact   String
+  otp       String
+  expiresAt DateTime @map("expires_at")
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  @@map("otps")
+}
+
+model Ticket {
+  id            Int       @id @default(autoincrement())
+  ticketNumber  String    @unique @map("ticket_number")
+  passengerId   Int?      @map("passenger_id")
+  passenger     Passenger? @relation(fields: [passengerId], references: [id])
+  busId         Int?      @map("bus_id")
+  bus           Bus?      @relation(fields: [busId], references: [id])
+  fromStop      String    @default("") @map("from_stop")
+  toStop        String    @default("") @map("to_stop")
+  totalFare     Float     @default(0) @map("total_fare")
+  status        String    @default("booked")
+  paymentMethod String    @default("wallet") @map("payment_method")
+  paymentId     String    @default("") @map("payment_id")
+  startTime     String    @default("") @map("start_time")
+  boardedAt     DateTime? @map("boarded_at")
+  verifiedById  Int?      @map("verified_by")
+  verifiedBy    User?     @relation("VerifiedBy", fields: [verifiedById], references: [id])
+  verifiedAt    DateTime? @map("verified_at")
+  smsSent       Boolean   @default(false) @map("sms_sent")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  passengers    TicketPassenger[]
+  payments      Payment[]
+  @@index([passengerId])
+  @@index([busId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("tickets")
+}
+
+model TicketPassenger {
+  id              Int    @id @default(autoincrement())
+  ticketId        Int    @map("ticket_id")
+  ticket          Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  name            String
+  age             Int    @default(0)
+  gender          String @default("")
+  concessionType  String @default("none") @map("concession_type")
+  @@map("ticket_passengers")
+}
+
+model Payment {
+  id                Int      @id @default(autoincrement())
+  passengerId       Int?     @map("passenger_id")
+  passenger         Passenger? @relation(fields: [passengerId], references: [id])
+  ticketId          Int?     @map("ticket_id")
+  ticket            Ticket?  @relation(fields: [ticketId], references: [id])
+  amount            Float
+  method            String
+  razorpayOrderId   String   @default("") @map("razorpay_order_id")
+  razorpayPaymentId String   @default("") @map("razorpay_payment_id")
+  razorpaySignature String   @default("") @map("razorpay_signature")
+  status            String   @default("pending")
+  createdAt         DateTime @default(now()) @map("created_at")
+  @@map("payments")
+}
+
+model WalletTransaction {
+  id           Int      @id @default(autoincrement())
+  passengerId  Int      @map("passenger_id")
+  passenger    Passenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  type         String
+  amount       Float
+  description  String   @default("")
+  referenceId  String   @default("") @map("reference_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  @@map("wallet_transactions")
+}
+
+model BusLocation {
+  id         Int      @id @default(autoincrement())
+  busId      Int      @map("bus_id")
+  bus        Bus      @relation(fields: [busId], references: [id], onDelete: Cascade)
+  lat        Float
+  lon        Float
+  speed      Float    @default(0)
+  heading    Float    @default(0)
+  recordedAt DateTime @default(now()) @map("recorded_at")
+  @@index([busId])
+  @@index([recordedAt])
+  @@map("bus_locations")
+}
+
+model Notification {
+  id           Int      @id @default(autoincrement())
+  passengerId  Int      @map("passenger_id")
+  passenger    Passenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  title        String
+  body         String
+  type         String   @default("info")
+  isRead       Boolean  @default(false) @map("is_read")
+  fcmSent      Boolean  @default(false) @map("fcm_sent")
+  createdAt    DateTime @default(now()) @map("created_at")
+  @@index([passengerId, isRead])
+  @@map("notifications")
+}
+
+model Complaint {
+  id            Int      @id @default(autoincrement())
+  passengerId   Int?     @map("passenger_id")
+  passenger     Passenger? @relation(fields: [passengerId], references: [id])
+  busId         Int?     @map("bus_id")
+  ticketNumber  String   @default("") @map("ticket_number")
+  subject       String
+  description   String
+  status        String   @default("open")
+  createdAt     DateTime @default(now()) @map("created_at")
+  @@map("complaints")
+}
+
+model Fine {
+  id               Int      @id @default(autoincrement())
+  passengerContact String   @map("passenger_contact")
+  busId            Int?     @map("bus_id")
+  bus              Bus?     @relation(fields: [busId], references: [id])
+  issuedById       Int?     @map("issued_by")
+  issuedBy         User?    @relation(fields: [issuedById], references: [id])
+  reason           String
+  amount           Float    @default(500)
+  status           String   @default("unpaid")
+  ticketNumber     String   @default("") @map("ticket_number")
+  createdAt        DateTime @default(now()) @map("created_at")
+  @@map("fines")
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int?     @map("user_id")
+  userRole   String?  @map("user_role")
+  action     String
+  resource   String
+  resourceId Int?     @map("resource_id")
+  details    Json     @default("{}")
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at")
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_log")
+}
