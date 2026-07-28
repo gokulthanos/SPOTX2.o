@@ -1,87 +1,127 @@
+import 'passenger.dart';
+import 'bus.dart';
+
 class Ticket {
-  final int id;
-  final String pnr;
+  final String ticketNumber; // also maps to ticketId
+  final int? userId;
   final int busId;
   final String busNumber;
-  final String boardingStopName;
-  final String destinationStopName;
-  final double fare;
-  final double convenienceFee;
-  final double platformFee;
-  final double totalAmount;
-  final String ticketStatus;
-  final String paymentStatus;
-  final String? passengerName;
-  final String? journeyDate;
-  final String? journeyTime;
-  final String? qrData;
-  final String createdAt;
+  final String fromStop;
+  final String toStop;
+  final double totalFare; // also maps to fare
+  final String status;
+  final String createdAt; // also maps to timestamp
+  final String startTime;
+  final String endTime;
+  final List<Passenger> passengers;
+  final Bus? bus;
 
   Ticket({
-    required this.id,
-    required this.pnr,
+    required this.ticketNumber,
+    this.userId,
     required this.busId,
     required this.busNumber,
-    required this.boardingStopName,
-    required this.destinationStopName,
-    this.fare = 0,
-    this.convenienceFee = 0,
-    this.platformFee = 0,
-    this.totalAmount = 0,
-    this.ticketStatus = 'active',
-    this.paymentStatus = 'pending',
-    this.passengerName,
-    this.journeyDate,
-    this.journeyTime,
-    this.qrData,
-    this.createdAt = '',
+    required this.fromStop,
+    required this.toStop,
+    required this.totalFare,
+    required this.status,
+    required this.createdAt,
+    required this.startTime,
+    required this.endTime,
+    required this.passengers,
+    this.bus,
   });
 
+  String get ticketId => ticketNumber;
+  double get fare => totalFare;
+  int get passengerCount => passengers.isNotEmpty ? passengers.length : 1;
+
   factory Ticket.fromJson(Map<String, dynamic> json) {
-    double toDouble(dynamic v) {
-      if (v is num) return v.toDouble();
-      if (v is String) return double.tryParse(v) ?? 0;
-      return 0;
+    // Support database response formatting as well as local storage backups
+    String ticketNo = json['ticketNumber'] ?? json['ticketId'] ?? '';
+    
+    var passengersRaw = json['passengers'];
+    List<Passenger> passengersList = [];
+    if (passengersRaw is List) {
+      passengersList = passengersRaw.map((p) => Passenger.fromJson(p)).toList();
+    }
+
+    double fareVal = 0.0;
+    if (json['totalFare'] is num) {
+      fareVal = (json['totalFare'] as num).toDouble();
+    } else if (json['fare'] is num) {
+      fareVal = (json['fare'] as num).toDouble();
+    } else if (json['fare'] is String) {
+      fareVal = double.tryParse(json['fare']) ?? 0.0;
+    }
+
+    int bId = 0;
+    if (json['busId'] is num) {
+      bId = (json['busId'] as num).toInt();
+    } else if (json['busId'] is String) {
+      bId = int.tryParse(json['busId']) ?? 0;
+    }
+
+    String startT = json['startTime'] ?? json['arrivalTime'] ?? '';
+    String endT = json['endTime'] ?? '';
+    if (endT.isEmpty && startT.isNotEmpty) {
+      // Calculate end time (3 hours later by default)
+      try {
+        final parts = startT.split(':');
+        if (parts.length >= 2) {
+          int hour = int.parse(parts[0]);
+          final minParts = parts[1].split(' ');
+          int min = int.parse(minParts[0]);
+          bool isPm = minParts.length > 1 && minParts[1].toUpperCase() == 'PM';
+          
+          if (isPm && hour < 12) hour += 12;
+          if (!isPm && hour == 12) hour = 0;
+          
+          hour = (hour + 3) % 24;
+          final suffix = hour >= 12 ? 'PM' : 'AM';
+          final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+          endT = '${displayHour.toString().padLeft(2, '0')}:${min.toString().padLeft(2, '0')} $suffix';
+        }
+      } catch (_) {
+        endT = '03 Hours Later';
+      }
     }
 
     return Ticket(
-      id: json['id'] ?? 0,
-      pnr: json['pnr'] ?? '',
-      busId: json['bus_id'] ?? 0,
-      busNumber: json['bus_number'] ?? '',
-      boardingStopName: json['boarding_stop_name'] ?? '',
-      destinationStopName: json['destination_stop_name'] ?? '',
-      fare: toDouble(json['fare']),
-      convenienceFee: toDouble(json['convenience_fee']),
-      platformFee: toDouble(json['platform_fee']),
-      totalAmount: toDouble(json['total_amount']),
-      ticketStatus: json['ticket_status'] ?? 'active',
-      paymentStatus: json['payment_status'] ?? 'pending',
-      passengerName: json['passenger_name'],
-      journeyDate: json['journey_date'],
-      journeyTime: json['journey_time'],
-      qrData: json['qr_data'],
-      createdAt: json['created_at'] ?? '',
+      ticketNumber: ticketNo,
+      userId: json['userId'],
+      busId: bId,
+      busNumber: json['busNumber'] ?? '',
+      fromStop: json['fromStop'] ?? '',
+      toStop: json['toStop'] ?? '',
+      totalFare: fareVal,
+      status: json['status'] ?? 'booked',
+      createdAt: json['createdAt'] ?? json['timestamp'] ?? DateTime.now().toIso8601String(),
+      startTime: startT,
+      endTime: endT,
+      passengers: passengersList,
+      bus: json['bus'] != null ? Bus.fromJson(json['bus']) : null,
     );
   }
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'pnr': pnr,
-    'bus_id': busId,
-    'bus_number': busNumber,
-    'boarding_stop_name': boardingStopName,
-    'destination_stop_name': destinationStopName,
-    'fare': fare,
-    'convenience_fee': convenienceFee,
-    'platform_fee': platformFee,
-    'total_amount': totalAmount,
-    'ticket_status': ticketStatus,
-    'payment_status': paymentStatus,
-    'passenger_name': passengerName,
-    'journey_date': journeyDate,
-    'journey_time': journeyTime,
-    'qr_data': qrData,
-    'created_at': createdAt,
-  };
+  Map<String, dynamic> toJson() {
+    return {
+      'ticketNumber': ticketNumber,
+      'ticketId': ticketNumber,
+      'userId': userId,
+      'busId': busId,
+      'busNumber': busNumber,
+      'fromStop': fromStop,
+      'toStop': toStop,
+      'totalFare': totalFare,
+      'fare': totalFare.toString(),
+      'status': status,
+      'createdAt': createdAt,
+      'timestamp': createdAt,
+      'startTime': startTime,
+      'endTime': endTime,
+      'passengers': passengers.map((p) => p.toJson()).toList(),
+      if (bus != null) 'bus': bus!.toJson(),
+    };
+  }
 }

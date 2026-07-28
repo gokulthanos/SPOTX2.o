@@ -1,142 +1,287 @@
 // server/controllers/ticket.controller.js
 // ─────────────────────────────────────────────────
-// Ticket Operations — Book, My Tickets, Detail
+// Ticket Controller
+// Handles ticket booking, verification, and history.
 // ─────────────────────────────────────────────────
+const crypto = require('crypto');
 const { getOne, getAll, run, lastInsertId } = require('../db');
+const { walletDeduct } = require('../services/payment.service');
 const { sendSuccess, sendError } = require('../utils/response');
-const { generatePnr } = require('./auth.controller');
 const logger = require('../utils/logger');
 
-const bookTicket = async (req, res) => {
+/**
+ * Generate a unique 8-character alphanumeric ticket number.
+ */
+const generateTicketNumber = () => {
+  return crypto.randomBytes(4).toString('hex').toUpperCase();
+};
+
+/**
+ * POST /api/v1/tickets
+ * Book a ticket. Supports wallet and Razorpay payment methods.
+ *
+ * Body: { busId, busNumber, fromStop, toStop, totalFare, passengers[], paymentMethod }
+ */
+const bookTicket = async (req, res, next) => {
   try {
-    const { bus_id, boarding_stop_id, destination_stop_id, passenger_name, passenger_dob, passenger_gender, payment_method } = req.body;
+    const {
+      busId,
+      busNumber,
+      fromStop,
+      toStop,
+      totalFare,
+      passengers = [],
+      paymentMethod = 'wallet',
+      paymentId = '',
+    } = req.body;
 
-    if (!bus_id || !boarding_stop_id || !destination_stop_id) {
-      return sendError(res, 'bus_id, boarding_stop_id, and destination_stop_id are required');
+    const passengerId = req.user?.id || null;
+
+    // If paying by wallet, deduct now
+    if (paymentMethod === 'wallet' && passengerId) {
+      const deductResult = await walletDeduct(
+        passengerId,
+        totalFare,
+        `Bus ticket: ${fromStop} → ${toStop}`,
+        busNumber
+      );
+
+      if (!deductResult.success) {
+        return sendError(res, deductResult.message || 'Wallet payment failed', 402);
+      }
     }
 
-    if (Number(boarding_stop_id) === Number(destination_stop_id)) {
-      return sendError(res, 'Boarding and destination stops must be different');
-    }
-
-    const bus = await getOne(
-      'SELECT b.*, r.name AS route_name FROM buses b JOIN routes r ON b.route_id = r.id WHERE b.id = ? AND b.is_active = 1',
-      [bus_id]
-    );
-    if (!bus) {
-      return sendError(res, 'Bus not found or inactive', 404);
-    }
-
-    const boardingBS = await getOne(
-      'SELECT stop_sequence, fare_from_origin FROM bus_stops WHERE bus_id = ? AND stop_id = ?',
-      [bus_id, boarding_stop_id]
-    );
-    const destBS = await getOne(
-      'SELECT stop_sequence, fare_from_origin FROM bus_stops WHERE bus_id = ? AND stop_id = ?',
-      [bus_id, destination_stop_id]
-    );
-
-    if (!boardingBS || !destBS) {
-      return sendError(res, 'One or both stops are not on this bus route');
-    }
-
-    if (boardingBS.stop_sequence >= destBS.stop_sequence) {
-      return sendError(res, 'Boarding stop must come before destination stop');
-    }
-
-    const fare = parseFloat((destBS.fare_from_origin - boardingBS.fare_from_origin).toFixed(2));
-    const convenience_fee = parseFloat((fare * 0.05).toFixed(2));
-    const platform_fee = 1.0;
-    const total_amount = parseFloat((fare + convenience_fee + platform_fee).toFixed(2));
-
-    const boardingStop = await getOne('SELECT name FROM stops WHERE id = ?', [boarding_stop_id]);
-    const destStop = await getOne('SELECT name FROM stops WHERE id = ?', [destination_stop_id]);
-
-    const pnr = generatePnr();
-    const qr_data = JSON.stringify({
-      pnr,
-      bus_number: bus.bus_number,
-      route: bus.route_name,
-      boarding: boardingStop ? boardingStop.name : '',
-      destination: destStop ? destStop.name : '',
-      fare: total_amount,
-      date: new Date().toISOString().split('T')[0],
+    // Generate ticket
+    const ticketNumber = generateTicketNumber();
+    const startTime = new Date().toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
     });
 
-    const passenger = await getOne('SELECT full_name, dob, gender FROM passengers WHERE id = ?', [req.user.id]);
-    const name = passenger_name || (passenger ? passenger.full_name : '');
-    const dob = passenger_dob || (passenger ? passenger.dob : null);
-    const gender = passenger_gender || (passenger ? passenger.gender : '');
-
+    // Insert ticket record
     await run(
-      `INSERT INTO tickets (pnr, passenger_id, bus_id, boarding_stop_id, destination_stop_id,
-        passenger_name, passenger_dob, passenger_gender, route_name, bus_number,
-        boarding_stop_name, destination_stop_name, fare, convenience_fee, platform_fee,
-        total_amount, payment_method, payment_status, ticket_status, qr_data, journey_date, journey_time)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'active', ?, CURDATE(), ?)`,
+      `INSERT INTO tickets 
+       (ticket_number, passenger_id, bus_id, from_stop, to_stop, total_fare, 
+        status, payment_method, payment_id, start_time)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        pnr, req.user.id, bus_id, boarding_stop_id, destination_stop_id,
-        name, dob, gender, bus.route_name, bus.bus_number,
-        boardingStop ? boardingStop.name : '', destStop ? destStop.name : '',
-        fare, convenience_fee, platform_fee, total_amount,
-        payment_method || 'upi', qr_data, bus.departure_time,
+        ticketNumber, passengerId, busId || 0, fromStop, toStop,
+        totalFare, 'booked', paymentMethod, paymentId, startTime,
       ]
     );
 
     const ticketId = await lastInsertId();
 
-    const ticket = await getOne('SELECT * FROM tickets WHERE id = ?', [ticketId]);
+    // Insert each passenger
+    for (const p of passengers) {
+      await run(
+        `INSERT INTO ticket_passengers (ticket_id, name, age, gender, concession_type)
+         VALUES (?, ?, ?, ?, ?)`,
+        [ticketId, p.name || '', p.age || 0, p.gender || '', p.concessionType || 'none']
+      );
+    }
 
-    logger.info(`[TICKET] Booked: PNR=${pnr}, passenger=${req.user.id}, bus=${bus.bus_number}, fare=${total_amount}`);
+    // Record payment
+    await run(
+      `INSERT INTO payments (passenger_id, ticket_id, amount, method, status, razorpay_payment_id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [passengerId, ticketId, totalFare, paymentMethod, 'success', paymentId]
+    );
 
-    return sendSuccess(res, 'Ticket booked successfully', ticket, 201);
+    logger.info(`[TICKET] Booked #${ticketNumber} — ${fromStop} → ${toStop} — ₹${totalFare}`);
+
+    return sendSuccess(res, 'Ticket booked successfully', {
+      ticketNumber,
+      busId,
+      busNumber,
+      fromStop,
+      toStop,
+      totalFare,
+      startTime,
+      passengers,
+      paymentMethod,
+      createdAt: new Date().toISOString(),
+    }, 201);
   } catch (err) {
-    logger.error(`[TICKET] Book error: ${err.message}`);
-    return sendError(res, 'Failed to book ticket', 500);
+    next(err);
   }
 };
 
-const getMyTickets = async (req, res) => {
+/**
+ * GET /api/v1/tickets/:ticketNumber
+ * Get ticket details by ticket number (for QR verification).
+ */
+const getTicket = async (req, res, next) => {
   try {
-    const { status } = req.query;
-    let sql = 'SELECT * FROM tickets WHERE passenger_id = ?';
-    const params = [req.user.id];
+    const ticket = await getOne(
+      'SELECT * FROM tickets WHERE ticket_number = ?',
+      [req.params.ticketNumber.toUpperCase()]
+    );
 
-    if (status) {
-      sql += ' AND ticket_status = ?';
-      params.push(status);
+    if (!ticket) return sendError(res, 'Ticket not found', 404);
+
+    // Fetch passengers for this ticket
+    const passengers = await getAll(
+      'SELECT * FROM ticket_passengers WHERE ticket_id = ?',
+      [ticket.id]
+    );
+
+    // Fetch bus data
+    let busData = null;
+    if (ticket.bus_id) {
+      const bus = await getOne('SELECT * FROM buses WHERE id = ?', [ticket.bus_id]);
+      if (bus) {
+        busData = {
+          id: bus.id,
+          busNumber: bus.bus_number,
+          busType: bus.bus_type,
+          travelStatus: bus.travel_status,
+          delayMinutes: bus.delay_minutes,
+        };
+      }
     }
 
-    sql += ' ORDER BY created_at DESC';
-
-    const tickets = await getAll(sql, params);
-    return sendSuccess(res, 'Tickets fetched', tickets);
+    return sendSuccess(res, 'Ticket found', {
+      ticketNumber: ticket.ticket_number,
+      ticketId: ticket.ticket_number,
+      busId: ticket.bus_id,
+      busNumber: ticket.bus_number || busData?.busNumber || '',
+      fromStop: ticket.from_stop,
+      toStop: ticket.to_stop,
+      totalFare: ticket.total_fare,
+      fare: ticket.total_fare,
+      status: ticket.status,
+      paymentMethod: ticket.payment_method,
+      startTime: ticket.start_time,
+      createdAt: ticket.created_at,
+      timestamp: ticket.created_at,
+      passengers,
+      bus: busData,
+    });
   } catch (err) {
-    logger.error(`[TICKET] My tickets error: ${err.message}`);
-    return sendError(res, 'Failed to fetch tickets', 500);
+    next(err);
   }
 };
 
-const getTicketDetail = async (req, res) => {
+/**
+ * GET /api/v1/tickets/passenger/me
+ * Get all tickets for the authenticated passenger.
+ */
+const getMyTickets = async (req, res, next) => {
   try {
-    const ticket = await getOne('SELECT * FROM tickets WHERE id = ? AND passenger_id = ?', [
-      req.params.id,
-      req.user.id,
-    ]);
+    const passengerId = req.user.id;
 
-    if (!ticket) {
-      return sendError(res, 'Ticket not found', 404);
+    const tickets = await getAll(
+      `SELECT *
+       FROM tickets
+       WHERE passenger_id = ?
+       ORDER BY created_at DESC
+       LIMIT 50`,
+      [passengerId]
+    );
+
+    const parsed = await Promise.all(
+      tickets.map(async (t) => {
+        const passengers = await getAll(
+          'SELECT name, age, gender FROM ticket_passengers WHERE ticket_id = ?',
+          [t.id]
+        );
+        return {
+          ticketNumber: t.ticket_number,
+          fromStop: t.from_stop,
+          toStop: t.to_stop,
+          totalFare: t.total_fare,
+          status: t.status,
+          startTime: t.start_time,
+          paymentMethod: t.payment_method,
+          createdAt: t.created_at,
+          passengers,
+        };
+      })
+    );
+
+    return sendSuccess(res, 'Tickets fetched', parsed);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PATCH /api/v1/tickets/:ticketNumber/verify
+ * Mark ticket as verified by an officer (after QR scan).
+ * Requires STAFF or ADMIN role.
+ */
+const verifyTicket = async (req, res, next) => {
+  try {
+    const officerId = req.user.id;
+    const { ticketNumber } = req.params;
+
+    const ticket = await getOne(
+      'SELECT * FROM tickets WHERE ticket_number = ?',
+      [ticketNumber.toUpperCase()]
+    );
+
+    if (!ticket) return sendError(res, 'Ticket not found', 404);
+    if (ticket.status === 'verified') {
+      return sendError(res, 'Ticket already verified', 409);
+    }
+    if (ticket.status === 'expired' || ticket.status === 'cancelled') {
+      return sendError(res, `Ticket is ${ticket.status}`, 400);
     }
 
-    return sendSuccess(res, 'Ticket detail fetched', ticket);
+    await run(
+      `UPDATE tickets SET status = 'verified', verified_by = ?, verified_at = NOW()
+       WHERE ticket_number = ?`,
+      [officerId, ticketNumber.toUpperCase()]
+    );
+
+    logger.info(`[TICKET] Verified #${ticketNumber} by officer ${officerId}`);
+
+    return sendSuccess(res, 'Ticket verified successfully', {
+      ticketNumber,
+      status: 'verified',
+      verifiedAt: new Date().toISOString(),
+    });
   } catch (err) {
-    logger.error(`[TICKET] Detail error: ${err.message}`);
-    return sendError(res, 'Failed to fetch ticket detail', 500);
+    next(err);
+  }
+};
+
+/**
+ * GET /api/v1/tickets/officer/history
+ * Get tickets verified by this officer today.
+ */
+const getOfficerVerifications = async (req, res, next) => {
+  try {
+    const officerId = req.user.id;
+    const { date } = req.query; // YYYY-MM-DD, defaults to today
+
+    const targetDate = date || new Date().toISOString().split('T')[0];
+
+    const tickets = await getAll(
+      `SELECT ticket_number, from_stop, to_stop, total_fare, verified_at, passenger_id
+       FROM tickets
+       WHERE verified_by = ?
+         AND DATE(verified_at) = ?
+       ORDER BY verified_at DESC`,
+      [officerId, targetDate]
+    );
+
+    return sendSuccess(res, 'Verification history fetched', {
+      date: targetDate,
+      count: tickets.length,
+      tickets,
+    });
+  } catch (err) {
+    next(err);
   }
 };
 
 module.exports = {
   bookTicket,
+  getTicket,
   getMyTickets,
-  getTicketDetail,
+  verifyTicket,
+  getOfficerVerifications,
 };

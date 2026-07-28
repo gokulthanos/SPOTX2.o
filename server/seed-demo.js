@@ -1,169 +1,345 @@
 // server/seed-demo.js
 // ─────────────────────────────────────────────────
-// SpotX 5.0 — Demo Data Seeder
-// Seeds: 12 stops, 3 routes, 5 buses, bus_stops, 2 conductors
+// SpotX 4.0 — Massive Demo Data Seeder (MySQL)
+// Generates: 110+ buses, 550+ tickets, 20+ routes,
+//   25+ stops, 15 cities, 50+ passengers
+// All realistic Tamil Nadu transit data
 // ─────────────────────────────────────────────────
 const bcrypt = require('bcryptjs');
-const { getOne, run, lastInsertId } = require('./db');
+const crypto = require('crypto');
+const { initDB, getOne, getAll, run } = require('./db');
 const logger = require('./utils/logger');
 
-const STOPS = [
-  { name: 'Ukkadam', lat: 10.9965, lon: 76.9590 },
-  { name: 'Gandhipuram', lat: 11.0055, lon: 76.9714 },
-  { name: 'RS Puram', lat: 11.0125, lon: 76.9468 },
-  { name: 'Peelamedu', lat: 11.0299, lon: 77.0118 },
-  { name: 'Saibaba Colony', lat: 11.0184, lon: 76.9844 },
-  { name: 'Sitra', lat: 10.9730, lon: 76.9350 },
-  { name: 'Aerodrome', lat: 11.0300, lon: 77.0400 },
-  { name: 'Race Course', lat: 11.0150, lon: 76.9650 },
-  { name: 'Mettupalayam', lat: 11.3000, lon: 76.8950 },
-  { name: 'Podanur', lat: 10.9580, lon: 76.9120 },
-  { name: 'Town Hall', lat: 10.9980, lon: 76.9520 },
-  { name: 'Coimbatore Bus Stand', lat: 10.9980, lon: 76.9560 },
+const TN_CITIES = [
+  { name: 'Chennai', state: 'Tamil Nadu', lat: 13.0827, lon: 80.2707 },
+  { name: 'Madurai', state: 'Tamil Nadu', lat: 9.9252, lon: 78.1198 },
+  { name: 'Coimbatore', state: 'Tamil Nadu', lat: 11.0168, lon: 76.9558 },
+  { name: 'Tiruchirappalli', state: 'Tamil Nadu', lat: 10.7905, lon: 78.7047 },
+  { name: 'Salem', state: 'Tamil Nadu', lat: 11.6643, lon: 78.1460 },
+  { name: 'Tirunelveli', state: 'Tamil Nadu', lat: 8.7139, lon: 77.7567 },
+  { name: 'Erode', state: 'Tamil Nadu', lat: 11.3410, lon: 77.7172 },
+  { name: 'Vellore', state: 'Tamil Nadu', lat: 12.9165, lon: 79.1325 },
+  { name: 'Thoothukudi', state: 'Tamil Nadu', lat: 8.7642, lon: 78.1348 },
+  { name: 'Dindigul', state: 'Tamil Nadu', lat: 10.3673, lon: 77.9803 },
+  { name: 'Kancheepuram', state: 'Tamil Nadu', lat: 12.8387, lon: 79.7016 },
+  { name: 'Pondicherry', state: 'Puducherry', lat: 11.9416, lon: 79.8083 },
+  { name: 'Cuddalore', state: 'Tamil Nadu', lat: 11.7480, lon: 79.7714 },
+  { name: 'Thanjavur', state: 'Tamil Nadu', lat: 10.7870, lon: 79.1378 },
+  { name: 'Karur', state: 'Tamil Nadu', lat: 10.9601, lon: 78.0766 },
 ];
 
-const ROUTES = [
-  { route_number: 'A1', name: 'A1 - Ukkadam to Gandhipuram', base_fare: 25 },
-  { route_number: 'B2', name: 'B2 - RS Puram to Peelamedu', base_fare: 30 },
-  { route_number: 'C3', name: 'C3 - Town Hall to Mettupalayam', base_fare: 20 },
+const TN_STOPS = [
+  { name: 'Chennai CMBT', city: 'Chennai', lat: 13.0674, lon: 80.2078, type: 'terminus' },
+  { name: 'Chennai T Nagar', city: 'Chennai', lat: 13.0410, lon: 80.2340, type: 'stop' },
+  { name: 'Chennai Tambaram', city: 'Chennai', lat: 12.9249, lon: 80.0850, type: 'stop' },
+  { name: 'Chennai Egmore', city: 'Chennai', lat: 13.0710, lon: 80.2568, type: 'stop' },
+  { name: 'Mahabalipuram', city: 'Chennai', lat: 12.6269, lon: 80.1927, type: 'stop' },
+  { name: 'Kancheepuram Bus Stand', city: 'Kancheepuram', lat: 12.8387, lon: 79.7016, type: 'terminus' },
+  { name: 'Vellore Bus Stand', city: 'Vellore', lat: 12.9165, lon: 79.1325, type: 'terminus' },
+  { name: 'Villupuram Bus Stand', city: 'Cuddalore', lat: 11.9401, lon: 79.4975, type: 'stop' },
+  { name: 'Pondicherry Bus Stand', city: 'Pondicherry', lat: 11.9416, lon: 79.8083, type: 'terminus' },
+  { name: 'Cuddalore Bus Stand', city: 'Cuddalore', lat: 11.7480, lon: 79.7714, type: 'terminus' },
+  { name: 'Trichy Central Bus Stand', city: 'Tiruchirappalli', lat: 10.7905, lon: 78.7047, type: 'terminus' },
+  { name: 'Madurai Mattuthavani', city: 'Madurai', lat: 9.9252, lon: 78.1198, type: 'terminus' },
+  { name: 'Madurai Periyar Bus Stand', city: 'Madurai', lat: 9.9290, lon: 78.1168, type: 'stop' },
+  { name: 'Salem Bus Stand', city: 'Salem', lat: 11.6643, lon: 78.1460, type: 'terminus' },
+  { name: 'Coimbatore Town Bus Stand', city: 'Coimbatore', lat: 11.0168, lon: 76.9558, type: 'terminus' },
+  { name: 'Coimbatore Gandhipuram', city: 'Coimbatore', lat: 11.0055, lon: 76.9714, type: 'stop' },
+  { name: 'Erode Bus Stand', city: 'Erode', lat: 11.3410, lon: 77.7172, type: 'terminus' },
+  { name: 'Tirunelveli Bus Stand', city: 'Tirunelveli', lat: 8.7139, lon: 77.7567, type: 'terminus' },
+  { name: 'Dindigul Bus Stand', city: 'Dindigul', lat: 10.3673, lon: 77.9803, type: 'terminus' },
+  { name: 'Thanjavur Bus Stand', city: 'Thanjavur', lat: 10.7870, lon: 79.1378, type: 'terminus' },
+  { name: 'Karur Bus Stand', city: 'Karur', lat: 10.9601, lon: 78.0766, type: 'terminus' },
+  { name: 'Thoothukudi Bus Stand', city: 'Thoothukudi', lat: 8.7642, lon: 78.1348, type: 'terminus' },
+  { name: 'Nagapattinam Bus Stand', city: 'Thanjavur', lat: 10.7652, lon: 79.8437, type: 'stop' },
+  { name: 'Kumbakonam Bus Stand', city: 'Thanjavur', lat: 10.9583, lon: 79.3781, type: 'stop' },
+  { name: 'Arani Bus Stand', city: 'Vellore', lat: 12.5692, lon: 79.2833, type: 'stop' },
 ];
 
-const BUSES = [
-  { bus_number: 'TN38A1001', route_index: 0, bus_type: 'Normal', capacity: 45, fare: 25, departure_time: '06:00', arrival_time: '07:30' },
-  { bus_number: 'TN38A1002', route_index: 0, bus_type: 'Express', capacity: 40, fare: 30, departure_time: '08:00', arrival_time: '09:15' },
-  { bus_number: 'TN38B2001', route_index: 1, bus_type: 'Normal', capacity: 45, fare: 30, departure_time: '07:00', arrival_time: '08:30' },
-  { bus_number: 'TN38B2002', route_index: 1, bus_type: 'AC', capacity: 35, fare: 45, departure_time: '09:00', arrival_time: '10:15' },
-  { bus_number: 'TN38C3001', route_index: 2, bus_type: 'Normal', capacity: 45, fare: 20, departure_time: '06:30', arrival_time: '07:45' },
+const TN_ROUTES = [
+  { num: 'TN-101', name: 'Chennai - Madurai Express', from: 'Chennai CMBT', to: 'Madurai Mattuthavani', dist: 460, fare: 450 },
+  { num: 'TN-102', name: 'Chennai - Pondicherry Coastal', from: 'Chennai CMBT', to: 'Pondicherry Bus Stand', dist: 151, fare: 120 },
+  { num: 'TN-103', name: 'Chennai - Vellore Local', from: 'Chennai CMBT', to: 'Vellore Bus Stand', dist: 135, fare: 80 },
+  { num: 'TN-104', name: 'Chennai - Trichy Superfast', from: 'Chennai CMBT', to: 'Trichy Central Bus Stand', dist: 330, fare: 350 },
+  { num: 'TN-105', name: 'Chennai - Kancheepuram', from: 'Chennai CMBT', to: 'Kancheepuram Bus Stand', dist: 75, fare: 45 },
+  { num: 'TN-201', name: 'Madurai - Trichy Express', from: 'Madurai Mattuthavani', to: 'Trichy Central Bus Stand', dist: 140, fare: 130 },
+  { num: 'TN-202', name: 'Madurai - Tirunelveli', from: 'Madurai Mattuthavani', to: 'Tirunelveli Bus Stand', dist: 160, fare: 140 },
+  { num: 'TN-301', name: 'Coimbatore - Salem Express', from: 'Coimbatore Town Bus Stand', to: 'Salem Bus Stand', dist: 165, fare: 150 },
+  { num: 'TN-302', name: 'Coimbatore - Erode', from: 'Coimbatore Gandhipuram', to: 'Erode Bus Stand', dist: 100, fare: 80 },
+  { num: 'TN-303', name: 'Coimbatore - Madurai Highway', from: 'Coimbatore Town Bus Stand', to: 'Madurai Mattuthavani', dist: 220, fare: 200 },
+  { num: 'TN-401', name: 'Salem - Trichy', from: 'Salem Bus Stand', to: 'Trichy Central Bus Stand', dist: 140, fare: 120 },
+  { num: 'TN-402', name: 'Erode - Karur - Trichy', from: 'Erode Bus Stand', to: 'Trichy Central Bus Stand', dist: 180, fare: 160 },
+  { num: 'TN-501', name: 'Chennai - Mahabalipuram Beach', from: 'Chennai Tambaram', to: 'Mahabalipuram', dist: 58, fare: 40 },
+  { num: 'TN-502', name: 'Vellore - Arani - Chennai', from: 'Vellore Bus Stand', to: 'Chennai CMBT', dist: 160, fare: 110 },
+  { num: 'TN-601', name: 'Thanjavur - Kumbakonam', from: 'Thanjavur Bus Stand', to: 'Kumbakonam Bus Stand', dist: 55, fare: 35 },
+  { num: 'TN-602', name: 'Thanjavur - Nagapattinam', from: 'Thanjavur Bus Stand', to: 'Nagapattinam Bus Stand', dist: 85, fare: 60 },
+  { num: 'TN-701', name: 'Dindigul - Madurai', from: 'Dindigul Bus Stand', to: 'Madurai Mattuthavani', dist: 75, fare: 60 },
+  { num: 'TN-801', name: 'Thoothukudi - Madurai', from: 'Thoothukudi Bus Stand', to: 'Madurai Mattuthavani', dist: 180, fare: 160 },
+  { num: 'TN-802', name: 'Thoothukudi - Tirunelveli', from: 'Thoothukudi Bus Stand', to: 'Tirunelveli Bus Stand', dist: 100, fare: 85 },
+  { num: 'TN-901', name: 'Pondicherry - Villupuram - Chennai', from: 'Pondicherry Bus Stand', to: 'Chennai CMBT', dist: 160, fare: 130 },
 ];
 
-const BUS_STOPS_MAP = {
-  'TN38A1001': [
-    { stop_name: 'Ukkadam', seq: 1, arrival: '06:00', departure: '06:05', dist: 0, fare: 0 },
-    { stop_name: 'Town Hall', seq: 2, arrival: '06:20', departure: '06:25', dist: 1.5, fare: 5 },
-    { stop_name: 'Race Course', seq: 3, arrival: '06:40', departure: '06:45', dist: 3.0, fare: 10 },
-    { stop_name: 'Saibaba Colony', seq: 4, arrival: '07:00', departure: '07:05', dist: 4.5, fare: 15 },
-    { stop_name: 'Gandhipuram', seq: 5, arrival: '07:20', departure: '07:25', dist: 6.0, fare: 20 },
-  ],
-  'TN38A1002': [
-    { stop_name: 'Ukkadam', seq: 1, arrival: '08:00', departure: '08:05', dist: 0, fare: 0 },
-    { stop_name: 'Sitra', seq: 2, arrival: '08:20', departure: '08:25', dist: 2.5, fare: 8 },
-    { stop_name: 'Peelamedu', seq: 3, arrival: '08:45', departure: '08:50', dist: 5.5, fare: 18 },
-    { stop_name: 'Gandhipuram', seq: 4, arrival: '09:10', departure: '09:15', dist: 6.0, fare: 25 },
-  ],
-  'TN38B2001': [
-    { stop_name: 'RS Puram', seq: 1, arrival: '07:00', departure: '07:05', dist: 0, fare: 0 },
-    { stop_name: 'Race Course', seq: 2, arrival: '07:15', departure: '07:20', dist: 1.5, fare: 8 },
-    { stop_name: 'Saibaba Colony', seq: 3, arrival: '07:35', departure: '07:40', dist: 3.0, fare: 15 },
-    { stop_name: 'Aerodrome', seq: 4, arrival: '07:55', departure: '08:00', dist: 5.0, fare: 22 },
-    { stop_name: 'Peelamedu', seq: 5, arrival: '08:20', departure: '08:25', dist: 6.5, fare: 28 },
-  ],
-  'TN38B2002': [
-    { stop_name: 'RS Puram', seq: 1, arrival: '09:00', departure: '09:05', dist: 0, fare: 0 },
-    { stop_name: 'Gandhipuram', seq: 2, arrival: '09:15', departure: '09:20', dist: 2.0, fare: 10 },
-    { stop_name: 'Saibaba Colony', seq: 3, arrival: '09:35', departure: '09:40', dist: 3.0, fare: 18 },
-    { stop_name: 'Peelamedu', seq: 4, arrival: '10:05', departure: '10:10', dist: 6.5, fare: 35 },
-  ],
-  'TN38C3001': [
-    { stop_name: 'Town Hall', seq: 1, arrival: '06:30', departure: '06:35', dist: 0, fare: 0 },
-    { stop_name: 'Ukkadam', seq: 2, arrival: '06:50', departure: '06:55', dist: 1.5, fare: 5 },
-    { stop_name: 'Podanur', seq: 3, arrival: '07:15', departure: '07:20', dist: 4.0, fare: 12 },
-    { stop_name: 'Mettupalayam', seq: 4, arrival: '07:40', departure: '07:45', dist: 7.0, fare: 20 },
-  ],
-};
+const BUS_TYPES = ['Deluxe', 'Express', 'Normal', 'AC', 'Sleeper', 'Semi-Deluxe', 'Ultra Deluxe'];
+const FIRST_NAMES = ['Raj', 'Kumar', 'Priya', 'Anitha', 'Suresh', 'Lakshmi', 'Murugan', 'Kavitha', 'Venkat', 'Deepa', 'Ravi', 'Saranya', 'Ganesh', 'Meena', 'Karthik', 'Divya', 'Senthil', 'Revathi', 'Mani', 'Jothi'];
+const LAST_NAMES = ['R', 'K', 'S', 'M', 'P', 'T', 'G', 'V', 'D', 'N'];
+const STAFF_NAMES = ['Rajendran', 'Selvam', 'Kumaran', 'Anand', 'Senthil', 'Murugan', 'Velmurugan', 'Gopal', 'Natarajan', 'Suresh', 'Ramanathan', 'Karthikeyan', 'Prakash', 'Durai', 'Mohan'];
 
-const CONDUCTORS = [
-  { name: 'Kumar', username: 'conductor1', password: 'pass123' },
-  { name: 'Ravi', username: 'conductor2', password: 'pass123' },
-];
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function randFloat(min, max) { return +(min + Math.random() * (max - min)).toFixed(6); }
+function genPhone() { return '9' + String(randInt(100000000, 999999999)); }
+function genEmail(name) { return `${name.toLowerCase().replace(/\s/g, '')}${randInt(1, 999)}@gmail.com`; }
+function genTicketNum() { return crypto.randomBytes(4).toString('hex').toUpperCase(); }
+
+function dateExpr(daysAgo) {
+  return `DATE_SUB(NOW(), INTERVAL ${Number(daysAgo)} DAY)`;
+}
 
 async function seed() {
-  try {
-    const existing = await getOne('SELECT COUNT(*) as c FROM stops');
-    if (existing && existing.c > 0) {
-      logger.info(`[SEED] Database already has ${existing.c} stops — skipping seed`);
-      return;
-    }
+  await initDB();
 
-    logger.info('[SEED] Seeding demo data...');
+  const existingBuses = await getOne('SELECT COUNT(*) as c FROM buses');
+  if (existingBuses && existingBuses.c > 5) {
+    logger.info(`[SEED-DEMO] Database already has ${existingBuses.c} buses — skipping seed`);
+    return;
+  }
 
-    // 1. Stops
-    const stopIds = {};
-    for (const stop of STOPS) {
-      await run('INSERT INTO stops (name, lat, lon) VALUES (?, ?, ?)', [stop.name, stop.lat, stop.lon]);
-      const inserted = await getOne('SELECT id FROM stops WHERE name = ?', [stop.name]);
-      if (inserted) stopIds[stop.name] = inserted.id;
-    }
-    logger.info(`[SEED] ${STOPS.length} stops seeded`);
+  logger.info('[SEED-DEMO] Generating massive demo dataset...');
 
-    // 2. Routes
-    const routeIds = {};
-    for (const route of ROUTES) {
-      await run('INSERT INTO routes (route_number, name, base_fare) VALUES (?, ?, ?)', [
-        route.route_number,
-        route.name,
-        route.base_fare,
-      ]);
-      const inserted = await getOne('SELECT id FROM routes WHERE route_number = ?', [route.route_number]);
-      if (inserted) routeIds[route.route_number] = inserted.id;
-    }
-    logger.info(`[SEED] ${ROUTES.length} routes seeded`);
+  // 1. Cities
+  for (const city of TN_CITIES) {
+    await run("INSERT IGNORE INTO cities (name, state, lat, lon) VALUES (?, ?, ?, ?)",
+      [city.name, city.state, city.lat, city.lon]);
+  }
+  logger.info(`[SEED-DEMO] ${TN_CITIES.length} cities inserted`);
 
-    // 3. Buses
-    const routeNumbers = ['A1', 'B2', 'C3'];
-    for (const bus of BUSES) {
-      const route_number = routeNumbers[bus.route_index];
-      const route_id = routeIds[route_number];
+  // 2. Stops
+  const stopIds = {};
+  for (const stop of TN_STOPS) {
+    const city = await getOne('SELECT id FROM cities WHERE name = ?', [stop.city]);
+    await run("INSERT IGNORE INTO stops (name, city_id, lat, lon, stop_type) VALUES (?, ?, ?, ?, ?)",
+      [stop.name, city?.id || 1, stop.lat, stop.lon, stop.type]);
+    const inserted = await getOne('SELECT id FROM stops WHERE name = ?', [stop.name]);
+    if (inserted) stopIds[stop.name] = inserted.id;
+  }
+  logger.info(`[SEED-DEMO] ${TN_STOPS.length} stops inserted`);
+
+  // 3. Routes
+  const routeIds = {};
+  for (const route of TN_ROUTES) {
+    const fromId = stopIds[route.from] || 1;
+    const toId = stopIds[route.to] || 4;
+    await run("INSERT IGNORE INTO routes (route_number, name, from_stop_id, to_stop_id, distance_km, base_fare) VALUES (?, ?, ?, ?, ?, ?)",
+      [route.num, route.name, fromId, toId, route.dist, route.fare]);
+    const r = await getOne('SELECT id FROM routes WHERE route_number = ?', [route.num]);
+    if (r) routeIds[route.num] = r.id;
+  }
+  logger.info(`[SEED-DEMO] ${TN_ROUTES.length} routes inserted`);
+
+  // 4. Officers / Staff
+  const bcryptPass = bcrypt.hashSync('staff123', 12);
+  const adminPass = bcrypt.hashSync('admin123', 12);
+
+  for (const name of STAFF_NAMES) {
+    const email = genEmail(name);
+    await run("INSERT IGNORE INTO users (name, email, password_hash, role) VALUES (?, ?, ?, 'STAFF')",
+      [name, email, bcryptPass]);
+  }
+
+  // Admin
+  await run("INSERT IGNORE INTO users (name, email, password_hash, role) VALUES (?, ?, ?, 'ADMIN')",
+    ['Super Admin', 'ADMIN@GOV.IN', adminPass]);
+
+  logger.info(`[SEED-DEMO] ${STAFF_NAMES.length + 1} officers inserted`);
+
+  // 5. Passengers
+  const passengerIds = [];
+  for (let i = 0; i < 50; i++) {
+    const name = `${pick(FIRST_NAMES)} ${pick(LAST_NAMES)}`;
+    const phone = genPhone();
+    const email = genEmail(name);
+    const passHash = bcrypt.hashSync('pass123', 12);
+    await run("INSERT IGNORE INTO passengers (full_name, contact, email, password_hash, wallet_balance) VALUES (?, ?, ?, ?, ?)",
+      [name, phone, email, passHash, randInt(0, 2000)]);
+    const p = await getOne('SELECT id FROM passengers WHERE contact = ?', [phone]);
+    if (p) passengerIds.push(p.id);
+  }
+  logger.info(`[SEED-DEMO] 50 passengers inserted`);
+
+  // 6. Buses (110)
+  const routeKeys = Object.keys(routeIds);
+  const statuses = ['Running', 'Not Started', 'Arrived', 'Delayed', 'Running', 'Running'];
+  const drivers = STAFF_NAMES;
+
+  let busCount = 0;
+  for (let i = 0; i < 110; i++) {
+    const routeKey = pick(routeKeys);
+    const rid = routeIds[routeKey];
+    const route = TN_ROUTES.find(r => r.num === routeKey);
+    const busType = pick(BUS_TYPES);
+    const capacity = busType === 'Sleeper' ? 30 : busType === 'AC' ? 35 : busType === 'Ultra Deluxe' ? 50 : 45;
+    const status = pick(statuses);
+    const occupancy = status === 'Running' ? randInt(5, Math.floor(capacity * 0.95)) :
+                      status === 'Delayed' ? randInt(10, capacity) : 0;
+    const delay = status === 'Delayed' ? randInt(5, 45) : 0;
+    const busNum = `TN${String(randInt(1, 99)).padStart(2, '0')}N${String(randInt(1000, 9999))}`;
+    const fromStop = route?.from || pick(TN_STOPS).name;
+    const toStop = route?.to || pick(TN_STOPS).name;
+    const fare = route?.fare || randInt(40, 500);
+    const driver = pick(drivers);
+    const city = TN_STOPS.find(s => s.name === fromStop)?.city || pick(TN_CITIES).name;
+
+    const baseLat = route ? TN_STOPS.find(s => s.name === fromStop)?.lat || 13.0 : 13.0;
+    const baseLon = route ? TN_STOPS.find(s => s.name === fromStop)?.lon || 80.2 : 80.2;
+    const lat = randFloat(baseLat - 0.5, baseLat + 0.5);
+    const lon = randFloat(baseLon - 0.5, baseLon + 0.5);
+
+    const stopsJson = JSON.stringify([
+      { name: fromStop, arrival: '06:00 AM', departure: '06:00 AM', distance: 0 },
+      { name: toStop, arrival: `${randInt(7, 14)}:${String(randInt(0, 59)).padStart(2, '0')} AM`, departure: `${randInt(7, 14)}:${String(randInt(0, 59)).padStart(2, '0')} AM`, distance: route?.dist || randInt(50, 400) },
+    ]);
+
+    await run(
+      `INSERT IGNORE INTO buses
+       (bus_number, route_id, bus_type, capacity, current_occupancy, travel_status,
+        delay_minutes, city, stops, from_stop, to_stop, arrival_time, fare, driver_name, lat, lon)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [busNum, rid || null, busType, capacity, occupancy, status, delay, city,
+       stopsJson, fromStop, toStop, '06:00 AM', fare, driver, lat, lon]
+    );
+    busCount++;
+  }
+  logger.info(`[SEED-DEMO] ${busCount} buses inserted`);
+
+  // 7. Tickets (550)
+  const allBuses = await getAll('SELECT id, bus_number, from_stop, to_stop, fare FROM buses');
+  let ticketCount = 0;
+
+  for (let i = 0; i < 550; i++) {
+    const bus = pick(allBuses);
+    const passengerId = pick(passengerIds);
+    const ticketNum = genTicketNum();
+    const fare = bus.fare || randInt(40, 500);
+    const methods = ['wallet', 'razorpay', 'wallet', 'wallet'];
+    const method = pick(methods);
+    const ticketStatuses = ['booked', 'verified', 'verified', 'verified', 'expired', 'booked'];
+    const status = pick(ticketStatuses);
+
+    const daysAgo = randInt(0, 30);
+
+    await run(
+      `INSERT IGNORE INTO tickets
+       (ticket_number, passenger_id, bus_id, from_stop, to_stop, total_fare,
+        status, payment_method, start_time, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${dateExpr(daysAgo)})`,
+      [ticketNum, passengerId, bus.id, bus.from_stop || 'Chennai CMBT',
+       bus.to_stop || 'Madurai', fare, status, method, '06:00 AM']
+    );
+    ticketCount++;
+  }
+  logger.info(`[SEED-DEMO] ${ticketCount} tickets inserted`);
+
+  // 8. Payments
+  const allTickets = await getAll('SELECT id, passenger_id, total_fare, payment_method FROM tickets');
+  for (const t of allTickets.slice(0, 300)) {
+    const daysAgo = randInt(0, 30);
+    await run(
+      `INSERT INTO payments (passenger_id, ticket_id, amount, method, status, created_at)
+       VALUES (?, ?, ?, ?, 'success', ${dateExpr(daysAgo)})`,
+      [t.passenger_id, t.id, t.total_fare, t.payment_method]
+    );
+  }
+  logger.info('[SEED-DEMO] Payments inserted');
+
+  // 9. Wallet transactions
+  for (const pid of passengerIds) {
+    const numTx = randInt(2, 8);
+    for (let i = 0; i < numTx; i++) {
+      const type = pick(['topup', 'deduction', 'topup', 'deduction']);
+      const amount = randInt(50, 500);
+      const daysAgo = randInt(0, 30);
       await run(
-        'INSERT INTO buses (bus_number, route_id, bus_type, capacity, travel_status, departure_time, arrival_time, fare) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [bus.bus_number, route_id, bus.bus_type, bus.capacity, 'scheduled', bus.departure_time, bus.arrival_time, bus.fare]
+        `INSERT INTO wallet_transactions (passenger_id, type, amount, description, created_at)
+         VALUES (?, ?, ?, ?, ${dateExpr(daysAgo)})`,
+        [pid, type, amount, type === 'topup' ? 'Wallet top-up via Razorpay' : 'Bus ticket purchase']
       );
     }
-    logger.info(`[SEED] ${BUSES.length} buses seeded`);
-
-    // 4. Bus-Stops mapping
-    for (const [bus_number, stops] of Object.entries(BUS_STOPS_MAP)) {
-      const bus = await getOne('SELECT id FROM buses WHERE bus_number = ?', [bus_number]);
-      if (!bus) continue;
-
-      for (const s of stops) {
-        const stop_id = stopIds[s.stop_name];
-        if (!stop_id) continue;
-
-        await run(
-          'INSERT INTO bus_stops (bus_id, stop_id, stop_sequence, arrival_time, departure_time, distance_from_origin, fare_from_origin) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [bus.id, stop_id, s.seq, s.arrival, s.departure, s.dist, s.fare]
-        );
-      }
-    }
-    logger.info('[SEED] Bus-stop mappings seeded');
-
-    // 5. Conductors
-    for (const c of CONDUCTORS) {
-      const hash = await bcrypt.hash(c.password, 12);
-      await run('INSERT INTO conductors (name, username, password_hash) VALUES (?, ?, ?)', [
-        c.name,
-        c.username,
-        hash,
-      ]);
-    }
-    logger.info(`[SEED] ${CONDUCTORS.length} conductors seeded`);
-
-    logger.info('[SEED] Demo data seeded successfully');
-    logger.info('[SEED] Demo conductors: conductor1/pass123, conductor2/pass123');
-  } catch (err) {
-    logger.error(`[SEED] Error: ${err.message}`);
   }
+  logger.info('[SEED-DEMO] Wallet transactions inserted');
+
+  // 10. Complaints
+  const complaints = [
+    'Bus not arriving on time', 'AC not working', 'Driver was rude', 'Overcrowding', 'Need better seats',
+    'Fare too high', 'Bus was dirty', 'Stops not announced', 'No water facility', 'Luggage space insufficient'
+  ];
+  for (let i = 0; i < 40; i++) {
+    const pid = pick(passengerIds);
+    const bus = pick(allBuses);
+    const daysAgo = randInt(0, 30);
+    await run(
+      `INSERT INTO complaints (passenger_id, bus_id, subject, description, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ${dateExpr(daysAgo)})`,
+      [pid, bus.id, pick(complaints), pick(complaints),
+       pick(['open', 'open', 'in_review', 'resolved', 'closed'])]
+    );
+  }
+  logger.info('[SEED-DEMO] 40 complaints inserted');
+
+  // 11. Fines
+  const fineReasons = ['No ticket', 'Overcrowding violation', 'Wrong route', 'Speeding', 'Illegal stop'];
+  for (let i = 0; i < 25; i++) {
+    const phone = genPhone();
+    const bus = pick(allBuses);
+    const officer = await getOne("SELECT id FROM users WHERE role = 'STAFF' LIMIT 1");
+    const daysAgo = randInt(0, 30);
+    await run(
+      `INSERT INTO fines (passenger_contact, bus_id, issued_by, reason, amount, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ${dateExpr(daysAgo)})`,
+      [phone, bus.id, officer?.id || 1, pick(fineReasons), randInt(200, 1000),
+       pick(['paid', 'unpaid', 'unpaid'])]
+    );
+  }
+  logger.info('[SEED-DEMO] 25 fines inserted');
+
+  // 12. Notifications
+  for (const pid of passengerIds) {
+    const numNotifs = randInt(1, 5);
+    for (let i = 0; i < numNotifs; i++) {
+      const daysAgo = randInt(0, 14);
+      await run(
+        `INSERT INTO notifications (passenger_id, title, body, type, is_read, created_at)
+         VALUES (?, ?, ?, ?, ?, ${dateExpr(daysAgo)})`,
+        [pid, pick(['Trip Update', 'Payment Confirmed', 'Delay Alert', 'Promotion']),
+         pick(['Your trip was successful', 'Payment of ₹120 confirmed', 'Bus delayed by 10 minutes', '50% off on next ride']),
+         pick(['info', 'success', 'warning']),
+         pick([0, 1, 1])]
+      );
+    }
+  }
+  logger.info('[SEED-DEMO] Notifications inserted');
+
+  // 13. Bus location history (recent)
+  const runningBuses = await getAll("SELECT id FROM buses WHERE travel_status = 'Running' OR travel_status = 'Delayed'");
+  for (const bus of runningBuses.slice(0, 30)) {
+    const numPoints = randInt(5, 20);
+    for (let i = 0; i < numPoints; i++) {
+      const hoursAgo = randInt(0, 2);
+      await run(
+        `INSERT INTO bus_locations (bus_id, lat, lon, speed, recorded_at)
+         VALUES (?, ?, ?, ?, DATE_SUB(NOW(), INTERVAL ${hoursAgo} HOUR))`,
+        [bus.id, randFloat(10, 14), randFloat(77, 81), randInt(20, 80)]
+      );
+    }
+  }
+  logger.info('[SEED-DEMO] Bus location history inserted');
+
+  logger.info('[SEED-DEMO] ✅ Demo data seeding complete!');
+  logger.info(`[SEED-DEMO] Summary: ${TN_CITIES.length} cities, ${TN_STOPS.length} stops, ${TN_ROUTES.length} routes, ${busCount} buses, ${ticketCount} tickets`);
 }
 
 module.exports = { seed };
 
+// Run directly
 if (require.main === module) {
-  const { initDB } = require('./db');
-  initDB()
-    .then(() => seed())
-    .then(() => process.exit(0))
-    .catch((e) => {
-      console.error(e);
-      process.exit(1);
-    });
+  seed().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });
 }
