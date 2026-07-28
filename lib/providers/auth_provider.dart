@@ -1,117 +1,203 @@
 import 'package:flutter/foundation.dart';
-import '../services/storage_service.dart';
-import '../services/notification_service.dart';
-
-enum AuthMode { none, passenger, officer }
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
+import '../models/passenger.dart';
 
 class AuthProvider extends ChangeNotifier {
-  AuthMode _mode = AuthMode.none;
-  String _passengerName = '';
-  String _passengerContact = '';
-  String _passengerToken = '';
-  String _officerName = '';
-  String _officerId = '';
-  String _officerRole = '';
-  String _officerToken = '';
-  bool _initialized = false;
+  Passenger? _passenger;
+  String? _token;
+  String? _error;
+  bool _isLoading = false;
+  bool _isConductor = false;
+  Map<String, dynamic>? _conductorData;
+  String? _conductorToken;
 
-  AuthMode get mode => _mode;
-  bool get isPassenger => _mode == AuthMode.passenger;
-  bool get isOfficer => _mode == AuthMode.officer;
-  bool get isLoggedIn => _mode != AuthMode.none;
-  bool get isInitialized => _initialized;
+  Passenger? get passenger => _passenger;
+  String? get token => _token;
+  String? get error => _error;
+  bool get isLoading => _isLoading;
+  bool get isLoggedIn => _token != null && _token!.isNotEmpty;
+  bool get isConductor => _isConductor;
+  Map<String, dynamic>? get conductorData => _conductorData;
 
-  String get passengerName => _passengerName;
-  String get passengerContact => _passengerContact;
-  String get passengerToken => _passengerToken;
-  String get officerName => _officerName;
-  String get officerId => _officerId;
-  String get officerRole => _officerRole;
-  String get officerToken => _officerToken;
-  bool get isAdmin => _officerRole == 'ADMIN';
+  void _setLoading(bool v) { _isLoading = v; notifyListeners(); }
+  void _setError(String? e) { _error = e; notifyListeners(); }
 
-  /// Load saved session on app startup (asynchronous secure load)
   Future<void> loadFromStorage() async {
-    final passengerToken = await StorageService.getSecure('passengerToken');
-    final govId = StorageService.getString('govOfficerId');
-
-    if (passengerToken != null && passengerToken.isNotEmpty) {
-      _mode = AuthMode.passenger;
-      _passengerToken = passengerToken;
-      _passengerName = StorageService.getString('passengerName') ?? '';
-      _passengerContact = StorageService.getString('passengerContact') ?? '';
-    } else if (govId != null && govId.isNotEmpty) {
-      _mode = AuthMode.officer;
-      _officerId = govId;
-      _officerName = StorageService.getString('govOfficerName') ?? '';
-      _officerRole = StorageService.getString('userRole') ?? 'STAFF';
-      _officerToken = await StorageService.getSecure('authToken') ?? '';
+    final prefs = await SharedPreferences.getInstance();
+    final savedToken = prefs.getString('auth_token');
+    if (savedToken != null && savedToken.isNotEmpty) {
+      _token = savedToken;
+      try {
+        final res = await ApiService.getProfile();
+        final data = res['data'] ?? res;
+        _passenger = Passenger.fromJson(data);
+      } catch (e) {
+        debugPrint('[Auth] Failed to load profile: $e');
+      }
+      notifyListeners();
     }
-    _initialized = true;
-    notifyListeners();
   }
 
-  Future<void> loginPassenger({
-    required String name,
-    required String contact,
-    required String token,
-    String? refreshToken,
-  }) async {
-    await StorageService.savePassengerSession(
-      token: token,
-      name: name,
-      contact: contact,
-      refreshToken: refreshToken,
-    );
-    _mode = AuthMode.passenger;
-    _passengerName = name;
-    _passengerContact = contact;
-    _passengerToken = token;
-    notifyListeners();
-
-    // Sync FCM token to backend after login
-    NotificationService.syncTokenAfterLogin();
+  Future<bool> login(String mobile, String password) async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      final res = await ApiService.login(mobile, password);
+      final data = res['data'] ?? res;
+      _token = data['token'] ?? data['accessToken'] ?? '';
+      _passenger = Passenger.fromJson(data['passenger'] ?? data);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('auth_token', _token!);
+      await prefs.setString('user_role', 'passenger');
+      await prefs.setString('user_name', _passenger?.fullName ?? '');
+      await prefs.setString('user_mobile', _passenger?.mobile ?? mobile);
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(e.toString().replaceFirst('Exception: ', ''));
+      _setLoading(false);
+      return false;
+    }
   }
 
-  Future<void> loginOfficer({
-    required String officerId,
-    required String name,
-    required String role,
-    required String token,
-    String? refreshToken,
-  }) async {
-    await StorageService.saveOfficerSession(
-      token: token,
-      officerId: officerId,
-      name: name,
-      role: role,
-      refreshToken: refreshToken,
-    );
-    _mode = AuthMode.officer;
-    _officerId = officerId;
-    _officerName = name;
-    _officerRole = role;
-    _officerToken = token;
-    notifyListeners();
-
-    // Sync FCM token to backend after officer login
-    NotificationService.syncTokenAfterLogin();
+  Future<bool> register(String name, String mobile, String password) async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      final res = await ApiService.register(name, mobile, password);
+      final data = res['data'] ?? res;
+      _token = data['token'] ?? data['accessToken'] ?? '';
+      _passenger = Passenger.fromJson(data['passenger'] ?? data);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('auth_token', _token!);
+      await prefs.setString('user_role', 'passenger');
+      await prefs.setString('user_name', _passenger?.fullName ?? '');
+      await prefs.setString('user_mobile', _passenger?.mobile ?? mobile);
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(e.toString().replaceFirst('Exception: ', ''));
+      _setLoading(false);
+      return false;
+    }
   }
 
   Future<void> logout() async {
-    // Delete FCM token from device on logout
-    await NotificationService.deleteToken();
-
-    await StorageService.clearPassengerSession();
-    await StorageService.clearOfficerSession();
-    _mode = AuthMode.none;
-    _passengerName = '';
-    _passengerContact = '';
-    _passengerToken = '';
-    _officerName = '';
-    _officerId = '';
-    _officerRole = '';
-    _officerToken = '';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    _passenger = null;
+    _token = null;
+    _isConductor = false;
+    _conductorData = null;
+    _conductorToken = null;
     notifyListeners();
+  }
+
+  Future<void> loadProfile() async {
+    try {
+      final res = await ApiService.getProfile();
+      final data = res['data'] ?? res;
+      _passenger = Passenger.fromJson(data);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[Auth] Load profile failed: $e');
+    }
+  }
+
+  Future<bool> updateProfile(Map<String, dynamic> data) async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      final res = await ApiService.updateProfile(data);
+      final updated = res['data'] ?? res;
+      _passenger = Passenger.fromJson(updated);
+      _setLoading(false);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _setError(e.toString().replaceFirst('Exception: ', ''));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  Future<bool> requestOtp(String mobile) async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      await ApiService.requestOtp(mobile);
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(e.toString().replaceFirst('Exception: ', ''));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  Future<bool> verifyOtp(String mobile, String otp) async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      final res = await ApiService.verifyOtp(mobile, otp);
+      final data = res['data'] ?? res;
+      _token = data['token'] ?? data['accessToken'] ?? '';
+      if (_token != null && _token!.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('auth_token', _token!);
+      }
+      _passenger = Passenger.fromJson(data['passenger'] ?? data);
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(e.toString().replaceFirst('Exception: ', ''));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  Future<bool> forgotPassword(String mobile, String otp, String newPassword) async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      await ApiService.forgotPassword(mobile, otp, newPassword);
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(e.toString().replaceFirst('Exception: ', ''));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  // ── Conductor ────────────────────────────
+  Future<bool> conductorLogin(String username, String password) async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      final res = await ApiService.conductorLogin(username, password);
+      final data = res['data'] ?? res;
+      _conductorToken = data['token'] ?? data['accessToken'] ?? '';
+      _conductorData = data['conductor'] ?? data;
+      _isConductor = true;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('auth_token', _conductorToken!);
+      await prefs.setString('user_role', 'conductor');
+      await prefs.setString('user_name', _conductorData?['name'] ?? '');
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(e.toString().replaceFirst('Exception: ', ''));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  void conductorLogout() {
+    _isConductor = false;
+    _conductorData = null;
+    _conductorToken = null;
+    logout();
   }
 }

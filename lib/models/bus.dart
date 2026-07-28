@@ -6,131 +6,70 @@ class BusStop {
 
   BusStop({
     required this.name,
-    required this.arrival,
-    required this.departure,
-    required this.distance,
+    this.arrival = '',
+    this.departure = '',
+    this.distance = 0.0,
   });
 
   factory BusStop.fromJson(dynamic json) {
     if (json is String) {
-      return BusStop(
-        name: json,
-        arrival: '',
-        departure: '',
-        distance: 0.0,
-      );
+      return BusStop(name: json);
     }
     return BusStop(
-      name: json['name'] ?? '',
+      name: json['name'] ?? json['stop_name'] ?? '',
       arrival: json['arrival'] ?? '',
       departure: json['departure'] ?? '',
       distance: (json['distance'] is num) ? (json['distance'] as num).toDouble() : 0.0,
     );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'name': name,
-      'arrival': arrival,
-      'departure': departure,
-      'distance': distance,
-    };
   }
 }
 
 class Bus {
   final int id;
   final String busNumber;
-  final String arrivalTime;
+  final String busType;
   final double fare;
-  final String route;
-  final String from;
-  final String to;
-  final String busType; // Deluxe, Express, Normal, Mini, Mofussil, Town
-  final List<BusStop> stops;
-  final int currentStopIndex;
-  final String travelStatus; // Not Started, Running, Arrived, Delayed
-  final int delayMinutes;
-  final String city;
+  final int routeId;
+  final String routeNumber;
+  final String routeName;
+  final String departureTime;
+  final String arrivalTime;
   final int capacity;
-  final int currentOccupancy;
-  final double lat;
-  final double lon;
+  final String travelStatus;
+  final String? boardingStop;
+  final String? destinationStop;
 
   Bus({
     required this.id,
     required this.busNumber,
-    required this.arrivalTime,
-    required this.fare,
-    required this.route,
-    required this.from,
-    required this.to,
-    required this.busType,
-    required this.stops,
-    required this.currentStopIndex,
-    required this.travelStatus,
-    required this.delayMinutes,
-    required this.city,
+    this.busType = 'Normal',
+    this.fare = 0,
+    this.routeId = 0,
+    this.routeNumber = '',
+    this.routeName = '',
+    this.departureTime = '',
+    this.arrivalTime = '',
     this.capacity = 45,
-    this.currentOccupancy = 0,
-    this.lat = 0.0,
-    this.lon = 0.0,
+    this.travelStatus = 'Not Started',
+    this.boardingStop,
+    this.destinationStop,
   });
 
   factory Bus.fromJson(Map<String, dynamic> json) {
-    var rawStops = json['stops'];
-    List<BusStop> stopsList = [];
-    if (rawStops is List) {
-      stopsList = rawStops.map((s) => BusStop.fromJson(s)).toList();
-    } else if (rawStops is String) {
-      stopsList = rawStops.split(',').map((s) => BusStop(
-        name: s.trim(),
-        arrival: '',
-        departure: '',
-        distance: 0.0,
-      )).toList();
-    }
-
     return Bus(
-      id: json['id'] ?? 0,
-      busNumber: json['busNumber'] ?? '',
-      arrivalTime: json['arrivalTime'] ?? '',
+      id: json['bus_id'] ?? json['id'] ?? 0,
+      busNumber: json['bus_number'] ?? json['busNumber'] ?? '',
+      busType: json['bus_type'] ?? json['busType'] ?? 'Normal',
       fare: (json['fare'] is num) ? (json['fare'] as num).toDouble() : 0.0,
-      route: json['route'] ?? '',
-      from: json['from'] ?? '',
-      to: json['to'] ?? '',
-      busType: json['busType'] ?? 'Normal',
-      stops: stopsList,
-      currentStopIndex: json['currentStopIndex'] ?? 0,
-      travelStatus: json['travelStatus'] ?? 'Not Started',
-      delayMinutes: json['delayMinutes'] ?? 0,
-      city: json['city'] ?? 'Chennai',
+      routeId: json['route_id'] ?? 0,
+      routeNumber: json['route_number'] ?? '',
+      routeName: json['route_name'] ?? '',
+      departureTime: json['departure_time'] ?? json['arrivalTime'] ?? '',
+      arrivalTime: json['arrival_time'] ?? '',
       capacity: json['capacity'] ?? 45,
-      currentOccupancy: json['currentOccupancy'] ?? 0,
-      lat: (json['lat'] is num) ? (json['lat'] as num).toDouble() : 0.0,
-      lon: (json['lon'] is num) ? (json['lon'] as num).toDouble() : 0.0,
+      travelStatus: json['travel_status'] ?? 'Not Started',
+      boardingStop: json['boarding_stop'],
+      destinationStop: json['destination_stop'],
     );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'busNumber': busNumber,
-      'arrivalTime': arrivalTime,
-      'fare': fare,
-      'route': route,
-      'from': from,
-      'to': to,
-      'busType': busType,
-      'stops': stops.map((s) => s.toJson()).toList(),
-      'currentStopIndex': currentStopIndex,
-      'travelStatus': travelStatus,
-      'delayMinutes': delayMinutes,
-      'city': city,
-      'capacity': capacity,
-      'currentOccupancy': currentOccupancy,
-      'lat': lat,
-      'lon': lon,
-    };
   }
 }
