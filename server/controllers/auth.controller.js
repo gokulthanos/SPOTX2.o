@@ -1,242 +1,301 @@
 // server/controllers/auth.controller.js
 // ─────────────────────────────────────────────────
-// Auth Controller — handles all authentication HTTP requests.
-// Delegates business logic to auth.service.js.
+// Passenger & Conductor Authentication
 // ─────────────────────────────────────────────────
-const authService = require('../services/auth.service');
-const { getOne, run } = require('../db');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { JWT_SECRET } = require('../config/env');
+const { getOne, run, lastInsertId } = require('../db');
 const { sendSuccess, sendError } = require('../utils/response');
-const { hashPassword } = require('../services/auth.service');
-const { sendOTP } = require('../services/sms.service');
 const logger = require('../utils/logger');
 
-// ── Passenger Auth ────────────────────────────────
-
-/**
- * POST /api/v1/auth/request-otp
- * Generate and send OTP to a mobile number via SMS.
- */
-const requestOtp = async (req, res, next) => {
-  try {
-    const { contact } = req.body;
-    const { otp, expiresAt } = await authService.requestOtp(contact);
-
-    // Send OTP via SMS (provider configured via SMS_PROVIDER env var)
-    const smsResult = await sendOTP(contact, otp);
-    if (!smsResult.success) {
-      logger.warn(`[AUTH] OTP SMS failed for ${contact}: ${smsResult.error || 'unknown'}`);
-    }
-
-    const response = { expiresAt };
-    // Only expose OTP in development mode for testing convenience
-    if (process.env.NODE_ENV !== 'production') {
-      response.devOtp = otp;
-    }
-
-    return sendSuccess(res, 'OTP sent successfully', response);
-  } catch (err) {
-    next(err);
+function generatePnr() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let pnr = '';
+  for (let i = 0; i < 10; i++) {
+    pnr += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-};
+  return pnr;
+}
 
-/**
- * POST /api/v1/auth/verify-otp
- * Verify OTP and create passenger account if new user.
- */
-const verifyOtp = async (req, res, next) => {
+function generateOtp() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+const passengerRegister = async (req, res) => {
   try {
-    const { contact, otp } = req.body;
-    const result = await authService.verifyOtp(contact, otp);
+    const { name, mobile, password } = req.body;
 
-    if (!result.success) {
-      return sendError(res, result.message, 400);
+    if (!name || !mobile || !password) {
+      return sendError(res, 'Name, mobile, and password are required');
     }
 
-    // Create passenger record if first-time user
-    const existing = await getOne('SELECT id FROM passengers WHERE contact = ?', [contact]);
-    if (!existing) {
-      await run('INSERT INTO passengers (contact, full_name, password_hash) VALUES (?, ?, ?)', [
-        contact, '', '',
-      ]);
+    if (password.length < 6) {
+      return sendError(res, 'Password must be at least 6 characters');
     }
 
-    return sendSuccess(res, 'OTP verified successfully', { contact });
-  } catch (err) {
-    next(err);
-  }
-};
-
-/**
- * POST /api/v1/auth/set-password
- * Set (or reset) password for a passenger after OTP verification.
- */
-const setPassword = async (req, res, next) => {
-  try {
-    const { contact, password, fullName } = req.body;
-
-    // Ensure OTP was verified for this contact
-    const otpRecord = await getOne(
-      'SELECT * FROM otps WHERE contact = ? AND verified = 1 ORDER BY id DESC LIMIT 1',
-      [contact]
-    );
-    if (!otpRecord) {
-      return sendError(res, 'OTP not verified. Please verify your number first.', 400);
-    }
-
-    const passwordHash = await hashPassword(password);
-
-    const existing = await getOne('SELECT id FROM passengers WHERE contact = ?', [contact]);
+    const existing = await getOne('SELECT id FROM passengers WHERE mobile = ?', [mobile]);
     if (existing) {
-      await run(
-        'UPDATE passengers SET password_hash = ?, full_name = COALESCE(NULLIF(?, \'\'), full_name) WHERE contact = ?',
-        [passwordHash, fullName || '', contact]
-      );
-    } else {
-      await run(
-        'INSERT INTO passengers (contact, full_name, password_hash) VALUES (?, ?, ?)',
-        [contact, fullName || '', passwordHash]
-      );
+      return sendError(res, 'Mobile number already registered', 409);
     }
 
-    // Auto-login after setting password
-    const { passenger, accessToken, refreshToken } = await authService.passengerLogin(contact, password);
+    const password_hash = await bcrypt.hash(password, 12);
 
-    return sendSuccess(res, 'Password set successfully', {
-      ...passenger,
-      accessToken,
-      refreshToken,
+    await run(
+      'INSERT INTO passengers (full_name, mobile, password_hash) VALUES (?, ?, ?)',
+      [name, mobile, password_hash]
+    );
+
+    const passengerId = await lastInsertId();
+
+    const token = jwt.sign(
+      { id: passengerId, role: 'passenger', mobile },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    logger.info(`[AUTH] Passenger registered: ${name} (${mobile})`);
+
+    return sendSuccess(res, 'Registration successful', {
+      token,
+      passenger: { id: passengerId, full_name: name, mobile },
     });
   } catch (err) {
-    next(err);
+    logger.error(`[AUTH] Register error: ${err.message}`);
+    return sendError(res, 'Registration failed', 500);
   }
 };
 
-/**
- * POST /api/v1/auth/login
- * Passenger login with contact + password.
- */
-const passengerLogin = async (req, res, next) => {
+const passengerLogin = async (req, res) => {
   try {
-    const { contact, password } = req.body;
-    const result = await authService.passengerLogin(contact, password);
+    const { mobile, password } = req.body;
 
-    logger.info(`[AUTH] Passenger logged in: ${contact}`);
-    return sendSuccess(res, 'Login successful', result);
-  } catch (err) {
-    next(err);
-  }
-};
-
-/**
- * POST /api/v1/auth/refresh
- * Issue new access + refresh tokens using a valid refresh token.
- */
-const refreshToken = async (req, res, next) => {
-  try {
-    const { refreshToken } = req.body;
-    const tokens = await authService.refreshAccessToken(refreshToken);
-    return sendSuccess(res, 'Tokens refreshed', tokens);
-  } catch (err) {
-    next(err);
-  }
-};
-
-/**
- * POST /api/v1/auth/logout
- * Revoke refresh token (requires authentication).
- */
-const logout = async (req, res, next) => {
-  try {
-    const { id, role } = req.user;
-    await authService.logout(id, role);
-    return sendSuccess(res, 'Logged out successfully');
-  } catch (err) {
-    next(err);
-  }
-};
-
-// ── Officer Auth ──────────────────────────────────
-
-/**
- * POST /api/v1/officer/login
- * Officer login with email + password.
- */
-const officerLogin = async (req, res, next) => {
-  try {
-    const { email, password } = req.body;
-    const result = await authService.officerLogin(email, password);
-
-    logger.info(`[AUTH] Officer logged in: ${email} (${result.user.role})`);
-    return sendSuccess(res, 'Login successful', result);
-  } catch (err) {
-    next(err);
-  }
-};
-
-/**
- * POST /api/v1/officer/register
- * Register a new staff/admin account (Admin only).
- */
-const registerOfficer = async (req, res, next) => {
-  try {
-    const { name, email, password, role = 'STAFF' } = req.body;
-
-    const existing = await getOne('SELECT id FROM users WHERE email = ?', [email.toUpperCase()]);
-    if (existing) {
-      return sendError(res, 'An account with this email already exists', 409);
+    if (!mobile || !password) {
+      return sendError(res, 'Mobile and password are required');
     }
 
-    const passwordHash = await hashPassword(password);
-    await run(
-      'INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)',
-      [name, email.toUpperCase(), passwordHash, role.toUpperCase()]
+    const passenger = await getOne('SELECT * FROM passengers WHERE mobile = ?', [mobile]);
+    if (!passenger) {
+      return sendError(res, 'Invalid credentials', 401);
+    }
+
+    if (!passenger.is_active) {
+      return sendError(res, 'Account is deactivated', 403);
+    }
+
+    const valid = await bcrypt.compare(password, passenger.password_hash);
+    if (!valid) {
+      return sendError(res, 'Invalid credentials', 401);
+    }
+
+    const token = jwt.sign(
+      { id: passenger.id, role: 'passenger', mobile: passenger.mobile },
+      JWT_SECRET,
+      { expiresIn: '7d' }
     );
 
-    logger.info(`[AUTH] New officer registered: ${email} (${role})`);
-    return sendSuccess(res, 'Staff registered successfully', { name, email, role }, 201);
+    return sendSuccess(res, 'Login successful', {
+      token,
+      passenger: {
+        id: passenger.id,
+        full_name: passenger.full_name,
+        mobile: passenger.mobile,
+        email: passenger.email,
+        wallet_balance: passenger.wallet_balance,
+      },
+    });
   } catch (err) {
-    next(err);
+    logger.error(`[AUTH] Login error: ${err.message}`);
+    return sendError(res, 'Login failed', 500);
   }
 };
 
-/**
- * POST /api/v1/auth/fcm-token
- * Save or update the device FCM token for push notifications.
- * Requires authentication (passenger or officer).
- */
-const updateFcmToken = async (req, res, next) => {
+const requestOtp = async (req, res) => {
   try {
-    const { fcmToken } = req.body;
-    if (!fcmToken || typeof fcmToken !== 'string') {
-      return sendError(res, 'fcmToken is required', 400);
+    const { mobile } = req.body;
+
+    if (!mobile) {
+      return sendError(res, 'Mobile number is required');
     }
 
-    const { id, role } = req.user;
+    const otp = generateOtp();
+    const expires_at = new Date(Date.now() + 5 * 60 * 1000);
 
-    if (role === 'PASSENGER') {
-      // Update passenger FCM token
-      await run('UPDATE passengers SET fcm_token = ? WHERE id = ?', [fcmToken, id]);
-      logger.info(`[AUTH] FCM token updated for passenger ${id}`);
-    } else {
-      // Update officer FCM token
-      await run('UPDATE users SET fcm_token = ? WHERE id = ?', [fcmToken, id]);
-      logger.info(`[AUTH] FCM token updated for officer ${id}`);
-    }
+    await run(
+      'INSERT INTO otps (contact, otp, expires_at) VALUES (?, ?, ?)',
+      [mobile, otp, expires_at]
+    );
 
-    return sendSuccess(res, 'FCM token updated');
+    logger.info(`[AUTH] OTP for ${mobile}: ${otp}`);
+
+    return sendSuccess(res, 'OTP sent successfully', { mobile });
   } catch (err) {
-    next(err);
+    logger.error(`[AUTH] OTP request error: ${err.message}`);
+    return sendError(res, 'Failed to send OTP', 500);
+  }
+};
+
+const verifyOtp = async (req, res) => {
+  try {
+    const { mobile, otp } = req.body;
+
+    if (!mobile || !otp) {
+      return sendError(res, 'Mobile and OTP are required');
+    }
+
+    const record = await getOne(
+      'SELECT * FROM otps WHERE contact = ? AND otp = ? AND verified = 0 ORDER BY id DESC LIMIT 1',
+      [mobile, otp]
+    );
+
+    if (!record) {
+      return sendError(res, 'Invalid OTP', 400);
+    }
+
+    if (new Date(record.expires_at) < new Date()) {
+      return sendError(res, 'OTP has expired', 400);
+    }
+
+    await run('UPDATE otps SET verified = 1 WHERE id = ?', [record.id]);
+
+    return sendSuccess(res, 'OTP verified successfully');
+  } catch (err) {
+    logger.error(`[AUTH] OTP verify error: ${err.message}`);
+    return sendError(res, 'OTP verification failed', 500);
+  }
+};
+
+const forgotPassword = async (req, res) => {
+  try {
+    const { mobile, otp, newPassword } = req.body;
+
+    if (!mobile || !otp || !newPassword) {
+      return sendError(res, 'Mobile, OTP, and new password are required');
+    }
+
+    if (newPassword.length < 6) {
+      return sendError(res, 'Password must be at least 6 characters');
+    }
+
+    const record = await getOne(
+      'SELECT * FROM otps WHERE contact = ? AND otp = ? AND verified = 1 ORDER BY id DESC LIMIT 1',
+      [mobile, otp]
+    );
+
+    if (!record) {
+      return sendError(res, 'OTP not verified. Please verify OTP first.', 400);
+    }
+
+    const passenger = await getOne('SELECT id FROM passengers WHERE mobile = ?', [mobile]);
+    if (!passenger) {
+      return sendError(res, 'No account found with this mobile number', 404);
+    }
+
+    const password_hash = await bcrypt.hash(newPassword, 12);
+    await run('UPDATE passengers SET password_hash = ? WHERE id = ?', [password_hash, passenger.id]);
+
+    return sendSuccess(res, 'Password reset successful');
+  } catch (err) {
+    logger.error(`[AUTH] Forgot password error: ${err.message}`);
+    return sendError(res, 'Password reset failed', 500);
+  }
+};
+
+const getProfile = async (req, res) => {
+  try {
+    const passenger = await getOne(
+      'SELECT id, full_name, dob, gender, mobile, email, emergency_contact, wallet_balance, is_active, created_at FROM passengers WHERE id = ?',
+      [req.user.id]
+    );
+
+    if (!passenger) {
+      return sendError(res, 'Passenger not found', 404);
+    }
+
+    return sendSuccess(res, 'Profile fetched', passenger);
+  } catch (err) {
+    logger.error(`[AUTH] Get profile error: ${err.message}`);
+    return sendError(res, 'Failed to fetch profile', 500);
+  }
+};
+
+const updateProfile = async (req, res) => {
+  try {
+    const { name, dob, gender, email, emergency_contact } = req.body;
+    const fields = [];
+    const values = [];
+
+    if (name !== undefined) { fields.push('full_name = ?'); values.push(name); }
+    if (dob !== undefined) { fields.push('dob = ?'); values.push(dob); }
+    if (gender !== undefined) { fields.push('gender = ?'); values.push(gender); }
+    if (email !== undefined) { fields.push('email = ?'); values.push(email); }
+    if (emergency_contact !== undefined) { fields.push('emergency_contact = ?'); values.push(emergency_contact); }
+
+    if (fields.length === 0) {
+      return sendError(res, 'No fields to update');
+    }
+
+    values.push(req.user.id);
+    await run(`UPDATE passengers SET ${fields.join(', ')} WHERE id = ?`, values);
+
+    const updated = await getOne(
+      'SELECT id, full_name, dob, gender, mobile, email, emergency_contact, wallet_balance FROM passengers WHERE id = ?',
+      [req.user.id]
+    );
+
+    return sendSuccess(res, 'Profile updated', updated);
+  } catch (err) {
+    logger.error(`[AUTH] Update profile error: ${err.message}`);
+    return sendError(res, 'Failed to update profile', 500);
+  }
+};
+
+const conductorLogin = async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return sendError(res, 'Username and password are required');
+    }
+
+    const conductor = await getOne('SELECT * FROM conductors WHERE username = ?', [username]);
+    if (!conductor) {
+      return sendError(res, 'Invalid credentials', 401);
+    }
+
+    if (!conductor.is_active) {
+      return sendError(res, 'Conductor account is deactivated', 403);
+    }
+
+    const valid = await bcrypt.compare(password, conductor.password_hash);
+    if (!valid) {
+      return sendError(res, 'Invalid credentials', 401);
+    }
+
+    const token = jwt.sign(
+      { id: conductor.id, role: 'conductor', username: conductor.username },
+      JWT_SECRET,
+      { expiresIn: '12h' }
+    );
+
+    return sendSuccess(res, 'Login successful', {
+      token,
+      conductor: { id: conductor.id, name: conductor.name, username: conductor.username },
+    });
+  } catch (err) {
+    logger.error(`[AUTH] Conductor login error: ${err.message}`);
+    return sendError(res, 'Login failed', 500);
   }
 };
 
 module.exports = {
+  passengerRegister,
+  passengerLogin,
   requestOtp,
   verifyOtp,
-  setPassword,
-  passengerLogin,
-  refreshToken,
-  logout,
-  officerLogin,
-  registerOfficer,
-  updateFcmToken,
+  forgotPassword,
+  getProfile,
+  updateProfile,
+  conductorLogin,
+  generatePnr,
 };
